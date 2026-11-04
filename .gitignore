@@ -1,0 +1,19 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Logs and local verification
+*.log
+verify-shots/
+
+# Tooling / local overrides
+node_modules/
+.env
+*.tmp
+*.muse-github-snapshot-sync.json*
+*.muse-github-snapshot-sync.json.tmp-*
+
+# Unused generated asset metadata (keep the repo clean)
+media-generation-*.json
