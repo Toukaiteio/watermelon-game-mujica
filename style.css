@@ -479,6 +479,7 @@ body {
   margin-top: 6px;
   align-items: center;
   justify-content: center;
+  padding: 2px 4px 6px;
 }
 
 .icon-btn {
@@ -511,14 +512,19 @@ body {
   inset: 0;
   z-index: 5;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 16px;
+  justify-content: safe center;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 12px;
   background: var(--cream);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
   transition: opacity 0.18s ease, visibility 0.18s ease;
+  scrollbar-width: thin;
+  box-sizing: border-box;
 }
 .screen.is-visible { opacity: 1; visibility: visible; pointer-events: auto; }
 .board-wrap .screen,
@@ -530,16 +536,22 @@ body {
   height: var(--in-h);
 }
 
+/* 暂停遮罩改半透明米白，不加 backdrop-filter 模糊，仅遮盖棋盘内缘；面板文字与按钮完全不透明 */
+#pauseScreen {
+  background: rgba(254, 245, 230, 0.78);
+}
+
 .panel {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 14px;
   width: min(320px, 92%);
-  max-height: 94%;
-  overflow-y: auto;
+  margin: auto;
+  padding: 8px 8px 14px;
   text-align: center;
-  scrollbar-width: thin;
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 .panel h2 {
   margin: 0;

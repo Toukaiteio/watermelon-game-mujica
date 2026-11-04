@@ -167,11 +167,6 @@
     return W;
   }
 
-  // 小美术素材：small-assets.webp（2026-11-03 生成，星星/爱心/西瓜片/
-  // 叶子/虚线指引那张）。合并星爆直接画它左上角的星爆图，不再只用
-  // 代码画的星星冒充。裁切区是按 1920x1280 原图量出的星爆范围。
-  const smallAssetsImg = new Image();
-  smallAssetsImg.src = 'assets/small-assets.webp';
 
   function fnv1a(str) {
     let h = 0x811c9dc5;
@@ -366,7 +361,7 @@
   }
 
   // ---------------------------------------------------------------
-  // 素材载入（把大图缩到 512 的离屏画布，降低显存/绘制开销）
+  // 素材载入（把大图缩到 1024 的离屏画布，兼顾高清视网膜显示与内存控制）
   // ---------------------------------------------------------------
   const textures = new Array(12).fill(null);
   let loadedCount = 0;
@@ -374,7 +369,7 @@
   let bgImage = null;
 
   function makeTexture(img) {
-    const size = 512;
+    const size = 1024;
     const c = document.createElement('canvas');
     c.width = size;
     c.height = size;
@@ -694,6 +689,7 @@
       vx: (Math.random() - 0.5) * 30,
       vy: 30,
       r,
+      angle: 0,
       age: 0,
       restTime: 0,
       settled: false,
@@ -792,22 +788,22 @@
     // 框的内缘就是墙：左右下墙 + 顶部，撞墙要回弹、落地要压扁、贴地要滚得慢下来
     if (b.x - b.r < 0) {
       b.x = b.r;
-      if (b.vx < 0) { b.squash = Math.max(b.squash || 0, Math.min(0.22, Math.abs(b.vx) / 1800)); b.vx = -b.vx * 0.35; }
+      if (b.vx < 0) { b.squash = Math.max(b.squash || 0, Math.min(0.22, Math.abs(b.vx) / 1800)); b.vx = -b.vx * 0.14; }
     } else if (b.x + b.r > W) {
       b.x = W - b.r;
-      if (b.vx > 0) { b.squash = Math.max(b.squash || 0, Math.min(0.22, Math.abs(b.vx) / 1800)); b.vx = -b.vx * 0.35; }
+      if (b.vx > 0) { b.squash = Math.max(b.squash || 0, Math.min(0.22, Math.abs(b.vx) / 1800)); b.vx = -b.vx * 0.14; }
     }
     if (b.y + b.r > H) {
       b.y = H - b.r;
       if (b.vy > 0) {
         b.squash = Math.max(b.squash || 0, Math.min(0.30, Math.abs(b.vy) / 2200));
-        b.vy = -b.vy * 0.32;
-        if (Math.abs(b.vy) < 26) b.vy = 0;
+        b.vy = -b.vy * 0.12;
+        if (Math.abs(b.vy) < 22) b.vy = 0;
       }
       b.vx *= 0.92; // 贴地滚动摩擦，比空中大得多
     } else if (b.y - b.r < 0) {
       b.y = b.r;
-      if (b.vy < 0) b.vy = -b.vy * 0.2;
+      if (b.vy < 0) b.vy = -b.vy * 0.10;
     }
   }
 
@@ -839,8 +835,9 @@
       x: clamp(mx, nr, W - nr),
       y: clamp(my, nr, H - nr),
       vx: (a.vx + b.vx) * 0.4,
-      vy: Math.min(-60, (a.vy + b.vy) * 0.35 - (80 + nr * 0.35)),
+      vy: Math.min(-24, (a.vy + b.vy) * 0.20 - (24 + nr * 0.12)),
       r: nr,
+      angle: 0,
       age: 0,
       restTime: 0,
       settled: false,
@@ -862,9 +859,9 @@
         const factor = 1 - pdist / (blastRadius + o.r);
         const pnx = pdx / pdist;
         const pny = pdy / pdist;
-        const push = factor * 90;
+        const push = factor * 36;
         o.vx += pnx * push;
-        o.vy += pny * push - 25;
+        o.vy += pny * push - 10;
         o.squash = Math.max(o.squash || 0, factor * 0.15);
       }
     }
@@ -887,6 +884,12 @@
       b.x += b.vx * dt;
       b.y += b.vy * dt;
       constrainWalls(b);
+      // 滚动角速度：未静止且有横向运动时按 angle += vx / r * dt 更新；静止时保持不变
+      if (!b.settled && Math.abs(b.vx) > 0.05) {
+        b.angle = (b.angle || 0) + (b.vx / b.r) * dt;
+        if (b.angle > Math.PI) b.angle -= TAU;
+        else if (b.angle < -Math.PI) b.angle += TAU;
+      }
       // 挤压回弹 + 倾斜：落地/撞击时压扁，之后按 dt*1.4 衰减；横向速度带来自然的倾斜跟随，静止时回正
       b.squash = Math.max(0, (b.squash || 0) - dt * 1.4);
       const tiltTarget = b.settled ? 0 : clamp(b.vx * 0.0006, -0.20, 0.20);
@@ -954,9 +957,9 @@
                 a.squash = Math.max(a.squash || 0, hit);
                 b.squash = Math.max(b.squash || 0, hit);
 
-                // 速度阈值：微小相对速度（重力下自然接触，-vn <= 35）不反弹，避免堆叠微振动
+                // 速度阈值：微小相对速度（重力下自然接触，-vn <= 35）不反弹，避免堆叠微振动；冲击反弹系数调低至 0.04
                 const isImpact = -vn > 35;
-                const e = isImpact ? 0.22 : 0;
+                const e = isImpact ? 0.04 : 0;
                 const impulse = (-(1 + e) * vn) / (1 / ma + 1 / mb);
                 a.vx -= (impulse * nx) / ma;
                 a.vy -= (impulse * ny) / ma;
@@ -1075,15 +1078,6 @@
       maxLife: 0.45,
       color: fruit.ring
     });
-    // 小美术星爆图：直接贴原图，大小随合并球走，0.5 秒淡出。
-    particles.push({
-      type: 'burstImg',
-      x,
-      y,
-      size: radius * (big ? 1.8 : 1.2),
-      life: 0.5,
-      maxLife: 0.5
-    });
   }
 
   function spawnScoreText(x, y, text, color) {
@@ -1109,8 +1103,6 @@
       }
       if (p.type === 'ring') {
         p.radius += p.growth * dt;
-      } else if (p.type === 'burstImg') {
-        // 原地淡出，不移动、不旋转
       } else if (p.type === 'text') {
         p.y += p.vy * dt;
         p.vy *= 0.96;
@@ -1255,7 +1247,7 @@
     const sorted = balls.slice().sort((a, b) => a.y - b.y);
     for (let i = 0; i < sorted.length; i++) {
       const b = sorted[i];
-      drawBall(ctx, b.level, b.x, b.y, b.r, 1);
+      drawBall(ctx, b.level, b.x, b.y, b.r, 1, b.angle || 0);
     }
 
     drawParticles();
@@ -1306,7 +1298,7 @@
     // 小字只会增加一眼扫过的负担，旧版字体问题之一就是它。
   }
 
-  function drawBall(g, level, x, y, r, alpha) {
+  function drawBall(g, level, x, y, r, alpha, angle) {
     const fruit = FRUITS[level - 1];
     const tex = textures[level];
     const scale = clamp(r / 34, 0.55, 2.4);
@@ -1331,11 +1323,15 @@
     g.fillRect(x - r, y - r, r * 2, r * 2);
 
     if (tex) {
-      // 贴图内容圆约占 1466/1600，缩放到略小于碰撞半径，留出描边
+      // 贴图内容圆约占 1466/1600，缩放到略小于碰撞半径，留出描边；只旋转贴图本身
       const size = r * 2 * IMAGE_FILL * 0.985;
+      g.save();
+      g.translate(x, y);
+      if (angle) g.rotate(angle);
       g.imageSmoothingEnabled = true;
       g.imageSmoothingQuality = 'high';
-      g.drawImage(tex, x - size / 2, y - size / 2, size, size);
+      g.drawImage(tex, -size / 2, -size / 2, size, size);
+      g.restore();
     } else {
       // 素材失败时的兜底：不显示 Lv 标签，只保留水果色圆
       g.fillStyle = fruit.ring;
@@ -1428,12 +1424,7 @@
       const a = clamp(p.life / p.maxLife, 0, 1);
       ctx.save();
       ctx.globalAlpha = a;
-      if (p.type === 'burstImg') {
-        if (smallAssetsImg.complete && smallAssetsImg.naturalWidth > 0) {
-          // small-assets.webp 左上角星爆：原图 1920x1280，裁 80,70,560,560
-          ctx.drawImage(smallAssetsImg, 80, 70, 560, 560, p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
-        }
-      } else if (p.type === 'star') {
+      if (p.type === 'star') {
         drawStar(p.x, p.y, p.size, p.rot, p.color);
       } else if (p.type === 'dot') {
         ctx.fillStyle = p.color;
@@ -1588,12 +1579,13 @@
   }
 
   // ---------------------------------------------------------------
-  // 画布尺寸（DPR）
+  // 画布尺寸（按 CSS 实测尺寸 × DPR 定 canvas 位图，上限 3，消灭重采样模糊）
   // ---------------------------------------------------------------
   function resizeCanvas() {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const pw = Math.round(W * dpr);
-    const ph = Math.round(H * dpr);
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const rect = canvas.getBoundingClientRect();
+    const pw = Math.max(1, Math.round(rect.width * dpr));
+    const ph = Math.max(1, Math.round(rect.height * dpr));
     if (canvas.width !== pw || canvas.height !== ph) {
       canvas.width = pw;
       canvas.height = ph;
