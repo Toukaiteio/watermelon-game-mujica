@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#fef5e6">
+  <title>合成大祥脚 · 游戏中</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 游戏页：所有平台同一公平逻辑棋盘 398x800，框外盒居中 fit-inside 舞台，
+       统一使用竖版薄框图（thin-frame-portrait.webp），canvas 位于框内缘 4.6%/2.3%/90.9%/95.1%，
+       球撞到的就是薄框内壁 = 图上的木墙，危险线横贯薄框内缘宽度。
+       PC端数据组件放中心棋盘右侧（宽200、间隙24、右侧剩余>=224才用侧边栏，棋盘居中不动），
+       空间不够时放顶部栏（高48），数据组件只出现一次、ID不变。 -->
+  <main class="game-page">
+    <header class="topbar" id="topbar" aria-label="游戏顶部数据栏" hidden></header>
+
+    <div class="stage" id="stage">
+      <div class="board-wrap" id="boardWrap">
+        <canvas id="gameCanvas" width="398" height="800" aria-label="合成大祥脚游戏棋盘"></canvas>
+
+        <section class="screen" id="pauseScreen" aria-label="暂停屏">
+          <div class="panel">
+            <h2>已暂停</h2>
+            <button class="btn-play" id="resumeBtn" type="button" aria-label="继续">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.52.86l11-6.5a1 1 0 0 0 0-1.72l-11-6.5A1 1 0 0 0 8 5.5Z"/></svg>
+            </button>
+            <div class="btn-row">
+              <button class="icon-btn" id="pauseRestart" type="button" aria-label="重开" title="重开">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 2.6-6.3"/><path d="M3 4v5h5"/></svg>
+              </button>
+              <button class="icon-btn" id="pauseMenu" type="button" aria-label="回菜单" title="回菜单">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10.5V20h13V10.5"/></svg>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section class="screen" id="overScreen" aria-label="结算屏">
+          <div class="panel">
+            <h2>本局结束</h2>
+            <div class="result-score" id="finalScore">0</div>
+            <div class="result-data">
+              <span class="best-data">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="#e8b93a" aria-hidden="true"><path d="M12 2.5 14.9 8.6l6.6.9-4.8 4.6 1.2 6.6L12 17.6l-5.9 3.1 1.2-6.6L2.5 9.5l6.6-.9L12 2.5Z"/></svg>
+                <strong id="finalBest">0</strong>
+              </span>
+              <span class="best-data">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3f6b4a" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/></svg>
+                <strong id="finalMaxLevel">—</strong>
+              </span>
+            </div>
+            <p class="achievement" id="finalAchievement" hidden></p>
+            <p class="warning-note" id="invalidNote" hidden>本局数据异常，最高分未记录</p>
+            <p class="record-note" id="newRecordNote" hidden>新纪录！</p>
+            <div class="btn-row">
+              <button class="btn-play" id="overRestart" type="button" aria-label="再来一局">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 2.6-6.3"/><path d="M3 4v5h5"/></svg>
+              </button>
+              <button class="icon-btn" id="overMenu" type="button" aria-label="回菜单" title="回菜单">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10.5V20h13V10.5"/></svg>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <div class="toast" id="toast" role="status" aria-live="assertive"></div>
+      </div>
+
+      <aside class="sidebar" id="sidebar" aria-label="游戏侧边数据栏">
+        <div class="data-block block-score" id="blockScore">
+          <span class="data-label">分数</span>
+          <span class="score-display"><strong id="scoreValue">0</strong></span>
+        </div>
+        <div class="data-block block-best" id="blockBest">
+          <span class="best-data">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="#e8b93a" aria-hidden="true"><path d="M12 2.5 14.9 8.6l6.6.9-4.8 4.6 1.2 6.6L12 17.6l-5.9 3.1 1.2-6.6L2.5 9.5l6.6-.9L12 2.5Z"/></svg>
+            <strong id="bestValue">0</strong>
+          </span>
+        </div>
+        <div class="data-block block-next" id="blockNext">
+          <span class="data-label">下一个</span>
+          <canvas id="nextCanvas" width="128" height="128" aria-label="下一个球预览"></canvas>
+        </div>
+        <div class="data-block block-controls" id="blockControls">
+          <button class="icon-btn" id="btnPause" type="button" aria-label="暂停" title="暂停">
+            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+          </button>
+          <button class="icon-btn" id="btnRestart" type="button" aria-label="重开" title="重开">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 2.6-6.3"/><path d="M3 4v5h5"/></svg>
+          </button>
+          <button class="icon-btn" id="btnSound" type="button" aria-label="静音" aria-pressed="true" title="静音">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6.5 9H3v6h3.5L11 19V5Z" fill="currentColor" stroke="none"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9.5 9.5 0 0 1 0 13"/></svg>
+          </button>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <audio id="audioBgm" src="audio/bgm.mp3" loop preload="none"></audio>
+  <audio id="audioMerge" src="audio/merge.mp3" preload="none"></audio>
+  <audio id="audioGameover" src="audio/gameover.mp3" preload="none"></audio>
+
+  <noscript>
+    <p class="noscript">需要开启 JavaScript 才能游玩。</p>
+  </noscript>
+  <script src="main.js" defer></script>
+</body>
+</html>

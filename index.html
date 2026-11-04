@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#fef5e6">
+  <title>合成大祥脚</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 开始页主视图只留三样，全部不用小字解释：
+       1）新生成的标题 Logo 图（非系统字体、非单球，见即是标题）
+       2）一个绿色圆形播放键（三角形即“开始”，不用文字说明）
+       3）右上角一个齿轮图标（设置入口）
+       最高分只以星星图标 + 数字出现，不写“最高分”三个字。
+       文字只留在 aria-label（给读屏，不占视觉）。 -->
+  <button class="icon-btn settings-btn" id="settingsBtn" type="button" aria-label="设置" title="设置">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-.4-1.1 1.7 1.7 0 0 0-1-.6 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.1-.4 1.7 1.7 0 0 0 .6-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 .4 1.1 1.7 1.7 0 0 0 1 .6 1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.1.4 1.7 1.7 0 0 0-.6 1Z"/></svg>
+  </button>
+
+  <main class="stage-page">
+    <div class="start-content">
+      <h1 class="visually-hidden">合成大祥脚</h1>
+      <img class="title-logo" src="assets/title-logo.webp" alt="合成大祥脚" width="360" height="95">
+      <a class="btn-play" href="game.html" aria-label="开始游戏">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.52.86l11-6.5a1 1 0 0 0 0-1.72l-11-6.5A1 1 0 0 0 8 5.5Z"/></svg>
+      </a>
+      <div class="best-data" id="bestData" hidden>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="#e8b93a" aria-hidden="true"><path d="M12 2.5 14.9 8.6l6.6.9-4.8 4.6 1.2 6.6L12 17.6l-5.9 3.1 1.2-6.6L2.5 9.5l6.6-.9L12 2.5Z"/></svg>
+        <strong id="bestValue">0</strong>
+      </div>
+    </div>
+  </main>
+
+  <!-- 设置：大标题、18px 行标签、音乐与音效原生 slider + 百分比、
+       清除是带字按钮、底部大“完成”按钮、遮罩实色不模糊。
+       行标签是项目名，不是玩法说明段落，说明段落仍然不加。 -->
+  <section class="screen" id="settingsScreen" aria-label="设置">
+    <div class="settings-panel">
+      <h2>设置</h2>
+      <div class="settings-row">
+        <span class="settings-label">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          音乐
+        </span>
+        <div class="volume-control">
+          <input type="range" class="volume-slider" id="musicSlider" min="0" max="100" step="1" value="42" aria-label="音乐音量">
+          <span class="volume-num" id="musicValue">42%</span>
+        </div>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6.5 9H3v6h3.5L11 19V5Z" fill="currentColor" stroke="none"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9.5 9.5 0 0 1 0 13"/></svg>
+          音效
+        </span>
+        <div class="volume-control">
+          <input type="range" class="volume-slider" id="sfxSlider" min="0" max="100" step="1" value="72" aria-label="音效音量">
+          <span class="volume-num" id="sfxValue">72%</span>
+        </div>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="#e8b93a" stroke="#1f4228" stroke-width="1" aria-hidden="true"><path d="M12 2.5 14.9 8.6l6.6.9-4.8 4.6 1.2 6.6L12 17.6l-5.9 3.1 1.2-6.6L2.5 9.5l6.6-.9L12 2.5Z"/></svg>
+          最高分 <strong id="settingsBestValue">0</strong>
+        </span>
+        <button class="btn-clear" id="clearBestBtn" type="button" aria-label="清除最高分">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+          清除
+        </button>
+      </div>
+      <button class="btn-done" id="settingsCloseBtn" type="button">完成</button>
+    </div>
+  </section>
+
+  <audio id="audioBgm" src="audio/bgm.mp3" loop preload="none"></audio>
+  <audio id="audioMerge" src="audio/merge.mp3" preload="none"></audio>
+  <audio id="audioGameover" src="audio/gameover.mp3" preload="none"></audio>
+
+  <noscript>
+    <p class="noscript">需要开启 JavaScript 才能游玩。</p>
+  </noscript>
+  <script>
+    (function () {
+      function fnv1a(str) {
+        let h = 0x811c9dc5;
+        for (let i = 0; i < str.length; i++) {
+          h ^= str.charCodeAt(i);
+          h = Math.imul(h, 0x01000193) >>> 0;
+        }
+        return h.toString(16).padStart(8, '0');
+      }
+      const bestData = document.getElementById('bestData');
+      const bestValue = document.getElementById('bestValue');
+      const settingsBestValue = document.getElementById('settingsBestValue');
+      const settingsScreen = document.getElementById('settingsScreen');
+      const musicSlider = document.getElementById('musicSlider');
+      const musicValue = document.getElementById('musicValue');
+      const sfxSlider = document.getElementById('sfxSlider');
+      const sfxValue = document.getElementById('sfxValue');
+      const bgm = document.getElementById('audioBgm');
+      const mergeSfx = document.getElementById('audioMerge');
+      const gameoverSfx = document.getElementById('audioGameover');
+
+      let best = 0;
+      try {
+        const raw = localStorage.getItem('xiangjiao-best-v1');
+        if (raw) {
+          const obj = JSON.parse(raw);
+          const expected = fnv1a(Math.floor(obj.best) + '|' + obj.merges + '|' + obj.drops + '|xiangjiao-salt');
+          if (obj && Number.isFinite(obj.best) && expected === obj.checksum && obj.best > 0) best = Math.floor(obj.best);
+        }
+      } catch (e) {}
+
+      function refreshBest() {
+        if (best > 0) {
+          bestValue.textContent = String(best);
+          bestData.hidden = false;
+        } else {
+          bestData.hidden = true;
+        }
+        // 设置页里最高分永远显示数字，无记录就是 0，不用横线让人猜。
+        settingsBestValue.textContent = String(best);
+      }
+
+      function loadVolumes() {
+        let mRaw = localStorage.getItem('xiangjiao-music-volume-v1');
+        let sRaw = localStorage.getItem('xiangjiao-sfx-volume-v1');
+        let m, s;
+        if (mRaw === null || sRaw === null) {
+          const old = localStorage.getItem('xiangjiao-sound-v1');
+          if (old === '0') {
+            m = 0;
+            s = 0;
+          } else {
+            m = 42;
+            s = 72;
+          }
+          try {
+            localStorage.setItem('xiangjiao-music-volume-v1', String(m));
+            localStorage.setItem('xiangjiao-sfx-volume-v1', String(s));
+          } catch (e) {}
+        } else {
+          m = parseInt(mRaw, 10);
+          s = parseInt(sRaw, 10);
+          if (isNaN(m) || m < 0 || m > 100) m = 42;
+          if (isNaN(s) || s < 0 || s > 100) s = 72;
+        }
+        return { music: m, sfx: s };
+      }
+
+      const vols = loadVolumes();
+      let currentMusic = vols.music;
+      let currentSfx = vols.sfx;
+
+      function applyMusic(v, persist) {
+        currentMusic = Math.max(0, Math.min(100, Math.round(v)));
+        musicSlider.value = String(currentMusic);
+        musicValue.textContent = currentMusic + '%';
+        if (bgm) bgm.volume = currentMusic / 100;
+        if (persist) {
+          try { localStorage.setItem('xiangjiao-music-volume-v1', String(currentMusic)); } catch (e) {}
+        }
+      }
+
+      function applySfx(v, persist) {
+        currentSfx = Math.max(0, Math.min(100, Math.round(v)));
+        sfxSlider.value = String(currentSfx);
+        sfxValue.textContent = currentSfx + '%';
+        if (mergeSfx) mergeSfx.volume = currentSfx / 100;
+        if (gameoverSfx) gameoverSfx.volume = currentSfx / 100;
+        if (persist) {
+          try { localStorage.setItem('xiangjiao-sfx-volume-v1', String(currentSfx)); } catch (e) {}
+        }
+      }
+
+      applyMusic(currentMusic, false);
+      applySfx(currentSfx, false);
+      refreshBest();
+
+      musicSlider.addEventListener('input', (e) => {
+        applyMusic(parseInt(e.target.value, 10) || 0, true);
+      });
+      sfxSlider.addEventListener('input', (e) => {
+        applySfx(parseInt(e.target.value, 10) || 0, true);
+      });
+
+      const settingsBtn = document.getElementById('settingsBtn');
+      settingsBtn.addEventListener('click', () => {
+        settingsScreen.classList.add('is-visible');
+        settingsBtn.style.visibility = 'hidden';
+      });
+      function closeSettings() {
+        settingsScreen.classList.remove('is-visible');
+        settingsBtn.style.visibility = '';
+      }
+      document.getElementById('settingsCloseBtn').addEventListener('click', closeSettings);
+      settingsScreen.addEventListener('click', (e) => {
+        if (e.target === settingsScreen) closeSettings();
+      });
+      document.getElementById('clearBestBtn').addEventListener('click', () => {
+        try { localStorage.removeItem('xiangjiao-best-v1'); } catch (e) {}
+        best = 0;
+        refreshBest();
+      });
+    })();
+  </script>
+</body>
+</html>

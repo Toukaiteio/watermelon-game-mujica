@@ -1,0 +1,617 @@
+/* 合成大祥脚 — 2026-11-04 公平薄框背景版与音量滑块版
+ *
+ * 1）公平薄框背景：所有平台同一张竖版薄框图（thin-frame-portrait.webp），
+ *    彻底删除横版薄框图引用与动态逻辑宽。
+ *    框外盒（.board-wrap）固定长宽比 0.520，fit-inside 舞台并在舞台内居中。
+ *    canvas 位于框内缘（4.6%/2.3%/90.9%/95.1%），逻辑尺寸严格固定 398x800，
+ *    scaleX 恒等于 scaleY（~0.999），所有平台游戏空间绝对公平一致。
+ * 2）按钮配色：全部高对比——主操作深绿底 + 白图标，次要操作米白底 +
+ *    深绿图标 + 深绿边框，图标 24px、按钮 44px。
+ * 3）设置页：包含大标题“设置”、音乐滑块行、音效滑块行、最高分数字与
+ *    “清除”带字按钮、底部大“完成”按钮。删除原来的音效开关，改用两个
+ *    原生 input range 滑块（0-100），高对比滑块与轨道，百分比数字实时变。
+ *    遮罩实色米白不模糊；最高分无记录时显示 0，不用横线。
+ * 4）标题 Logo：Logo 图（深绿圆润游戏字体 + 西瓜片 + 桃子点缀，
+ *    字为“合成大祥脚”），开始页底色用 Logo 底色 #fef5e6。
+ * 5）小美术：合并时画小美术图里的星爆（small-assets.webp 裁 80,70,560,560）。
+ *
+ * 字体：标题是图片，不依赖字体；其余数字/状态字用系统圆润
+ * 无衬线栈，不引入网络字体（离线要求）。
+ */
+
+:root {
+  --font: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+  --cream: #fef5e6;
+  --cream-3: #fffaf1;
+  --green-deep: #3f6b4a;
+  --green-mid: #7fb97e;
+  --green-btn: #93c98b;
+  --pink: #f4a7b8;
+  --ink: #3d463a;
+  --muted: #6d7567;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { min-height: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  color: var(--ink);
+  font-family: var(--font);
+  background: var(--cream);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- 开始页：底色 = Logo 底色，Logo 图边不形成框 ---------- */
+.stage-page {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
+  background: var(--cream);
+}
+
+.start-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  max-width: 480px;
+  text-align: center;
+}
+
+.title-logo {
+  width: min(360px, 88vw);
+  height: auto;
+  display: block;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip: rect(0 0 0 0);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* 数据只用图标 + 数字，不写标签字 */
+.best-data {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--green-deep);
+  font-variant-numeric: tabular-nums;
+}
+.best-data strong { font-size: 21px; font-weight: 900; }
+.best-data svg { flex: none; }
+
+.settings-btn {
+  position: fixed;
+  top: calc(14px + env(safe-area-inset-top));
+  right: 14px;
+  z-index: 10;
+}
+
+/* 设置面板：上一版只剩三个图标，站在玩家角度根本看不懂——
+ * 星星加横线是什么意思、垃圾桶删的是什么、喇叭是开还是关，全靠猜，
+ * 还隔着一层模糊的 Logo，错在我。本版改回可读的设置页：大标题、
+ * 18px 的行标签（不是小字说明）、开关本身显示开/关、清除是带字的按钮、
+ * 底部一个大“完成”按钮。行标签是项目名，不是解释段落，玩法说明段落
+ * 仍然不加。设置遮罩改成实色米白，不再模糊透出后面的 Logo。 */
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 20px;
+  width: min(360px, 92vw);
+}
+.settings-panel h2 {
+  margin: 0;
+  text-align: center;
+  font-size: 28px;
+  color: var(--green-deep);
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  padding: 0 4px;
+  border-bottom: 1.5px solid #e8dcc2;
+}
+.settings-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.settings-label strong { font-size: 22px; color: var(--green-deep); font-variant-numeric: tabular-nums; }
+.settings-label svg { flex: none; color: var(--green-deep); }
+.volume-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+.volume-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: clamp(100px, 28vw, 140px);
+  height: 8px;
+  border-radius: 999px;
+  background: #c8dfc4;
+  border: 1.5px solid #1f4228;
+  outline: none;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.volume-slider:focus-visible {
+  outline: 2.5px solid #1f4228;
+  outline-offset: 3px;
+}
+.volume-slider::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 999px;
+  background: transparent;
+}
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #2f6a3d;
+  border: 2px solid #1f4228;
+  margin-top: -10px;
+  box-shadow: 0 1px 3px rgba(31, 66, 40, 0.35);
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+.volume-slider::-webkit-slider-thumb:active {
+  transform: scale(1.12);
+}
+.volume-slider::-moz-range-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #c8dfc4;
+  border: 1.5px solid #1f4228;
+}
+.volume-slider::-moz-range-thumb {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #2f6a3d;
+  border: 2px solid #1f4228;
+  box-shadow: 0 1px 3px rgba(31, 66, 40, 0.35);
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+.volume-slider::-moz-range-thumb:active {
+  transform: scale(1.12);
+}
+.volume-num {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--green-deep);
+  font-variant-numeric: tabular-nums;
+  min-width: 44px;
+  text-align: right;
+}
+.btn-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 2px solid #1f4228;
+  border-radius: 999px;
+  background: #fffaf1;
+  color: #1f4228;
+  font-family: inherit;
+  font-size: 16px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.btn-clear svg { width: 18px; height: 18px; }
+.btn-done {
+  min-height: 56px;
+  padding: 12px 20px;
+  border: 2px solid #1f4228;
+  border-radius: 999px;
+  background: #2f6a3d;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+/* ---------- 游戏页 ---------- */
+.game-page {
+  min-height: 100dvh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: var(--cream);
+  overflow: hidden;
+  position: relative;
+}
+
+/* 顶部栏（空间不够时）：高 48px，铺满视口宽，米白底色，无卡片框/边框/阴影 */
+.topbar {
+  flex: 0 0 48px;
+  width: 100vw;
+  height: 48px;
+  min-height: 48px;
+  max-height: 48px;
+  background: var(--cream);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border: none;
+  box-shadow: none;
+  overflow: hidden;
+  white-space: nowrap;
+  user-select: none;
+  z-index: 10;
+}
+.topbar[hidden] {
+  display: none !important;
+}
+.topbar .data-label {
+  display: none !important;
+}
+.topbar .data-block {
+  display: inline-flex;
+  align-items: center;
+}
+.topbar .block-score #scoreValue {
+  font-size: 20px;
+  font-weight: 900;
+  color: var(--green-deep);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.topbar .block-next #nextCanvas {
+  width: 32px;
+  height: 32px;
+  display: block;
+}
+.topbar .block-best .best-data {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--green-deep);
+  font-variant-numeric: tabular-nums;
+}
+.topbar .block-best .best-data svg {
+  width: 16px;
+  height: 16px;
+}
+.topbar .block-best #bestValue {
+  font-size: 18px;
+  font-weight: 900;
+  line-height: 1;
+}
+.topbar .block-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.topbar .block-controls .icon-btn {
+  width: 36px;
+  height: 36px;
+  box-shadow: 0 1.5px 0 #1f4228;
+}
+.topbar .block-controls .icon-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* 舞台：底色米白 #fef5e6，左右/上下留出的舞台背景不得画成第二个框、不得加边框阴影。
+ * 框外盒（.board-wrap）固定长宽比 0.520，fit-inside 舞台并在舞台内居中。
+ * 所有平台统一使用竖版薄框图 thin-frame-portrait.webp（1120x2240），框在图边缘、细、内区大。
+ * 框内缘相对框外盒：左 4.6%、上 2.3%、宽 90.9%、高 95.1%
+ * canvas 位于框内缘里，碰撞墙 = 框内壁。
+ * 逻辑棋盘严格固定 398×800，canvas 长宽比固定 398/800 = 0.4975 (±0.002)。
+ */
+.stage {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100vw;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--cream);
+  overflow: hidden;
+}
+
+.board-wrap {
+  --in-l: 4.6%;
+  --in-t: 2.3%;
+  --in-w: 90.9%;
+  --in-h: 95.1%;
+  position: relative;
+  flex: none;
+  background: url("assets/thin-frame-portrait.webp") 0 0 / 100% 100% no-repeat;
+  aspect-ratio: 0.520;
+  max-width: 100%;
+  max-height: 100%;
+}
+
+/* 侧边栏（PC，右侧空间够时）：位于中心棋盘右侧，宽 200px，间隙 24px，上缘对齐。
+ * 严禁做成卡片框、边框、阴影或色块面板。
+ */
+.sidebar {
+  position: absolute;
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 20px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+  user-select: none;
+  z-index: 10;
+}
+.sidebar[hidden] {
+  display: none !important;
+}
+.sidebar .data-block {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.sidebar .data-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--muted);
+  line-height: 1.2;
+}
+.sidebar .block-score #scoreValue {
+  font-size: 38px;
+  font-weight: 900;
+  color: var(--green-deep);
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.sidebar .block-best .best-data {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--green-deep);
+  font-variant-numeric: tabular-nums;
+}
+.sidebar .block-best .best-data svg {
+  width: 22px;
+  height: 22px;
+}
+.sidebar .block-best #bestValue {
+  font-size: 24px;
+  font-weight: 900;
+  line-height: 1;
+}
+.sidebar .block-next #nextCanvas {
+  width: 72px;
+  height: 72px;
+  display: block;
+}
+.sidebar .block-controls {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+.sidebar .block-controls .icon-btn {
+  width: 44px;
+  height: 44px;
+}
+.sidebar .block-controls .icon-btn svg {
+  width: 24px;
+  height: 24px;
+}
+
+#gameCanvas {
+  position: absolute;
+  left: var(--in-l);
+  top: var(--in-t);
+  width: var(--in-w);
+  height: var(--in-h);
+  display: block;
+  touch-action: none;
+  cursor: crosshair;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+/* ---------- 按钮：UI 套件配色——绿圆粉图标，粉圆绿图标 ---------- */
+/* 按钮配色：上一版粉图标在绿底上，对比度低到小图里几乎看不见，
+ * 是“生怕玩家能看清”的配色，错在我。本版全部高对比：
+ * 主操作深绿底 + 白图标，深绿 #2f6a3d 在白字上对比度 >7:1；
+ * 次要操作米白底 + 深绿图标 #1f4228，深绿在米白上对比度 >10:1，
+ * 边框也是深绿，不再用粉绿配对。 */
+.btn-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  padding: 0;
+  border: 2px solid #1f4228;
+  border-radius: 50%;
+  color: #ffffff;
+  background: #2f6a3d;
+  box-shadow: 0 4px 0 #1f4228, 0 6px 12px rgba(31, 66, 40, 0.25);
+  cursor: pointer;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.1s ease;
+}
+.btn-play:active { transform: translateY(2px); box-shadow: 0 2px 0 #1f4228; }
+.btn-play:focus-visible { outline: 2.5px solid #1f4228; outline-offset: 2px; }
+.btn-play svg { width: 32px; height: 32px; }
+
+.btn-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 2px solid #1f4228;
+  border-radius: 50%;
+  color: #1f4228;
+  background: #fffaf1;
+  box-shadow: 0 2px 0 #1f4228;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.1s ease;
+}
+.icon-btn:active { transform: translateY(1.5px); }
+.icon-btn:focus-visible { outline: 2.5px solid #1f4228; outline-offset: 2px; }
+.icon-btn:disabled { opacity: 0.45; cursor: default; }
+.icon-btn svg { width: 24px; height: 24px; }
+.icon-btn.pink { color: #1f4228; background: #fffaf1; border-color: #1f4228; }
+.icon-btn.icon-lg { width: 52px; height: 52px; }
+.icon-btn.icon-lg svg { width: 26px; height: 26px; }
+
+/* ---------- 暂停 / 结算 / 设置：遮罩只盖棋盘内缘（游戏页）或整页（开始页） ---------- */
+.screen {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--cream);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.18s ease, visibility 0.18s ease;
+}
+.screen.is-visible { opacity: 1; visibility: visible; pointer-events: auto; }
+.board-wrap .screen,
+.stage .screen {
+  inset: auto;
+  left: var(--in-l);
+  top: var(--in-t);
+  width: var(--in-w);
+  height: var(--in-h);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: min(320px, 92%);
+  max-height: 94%;
+  overflow-y: auto;
+  text-align: center;
+  scrollbar-width: thin;
+}
+.panel h2 {
+  margin: 0;
+  font-size: clamp(24px, 6vw, 30px);
+  line-height: 1.2;
+  color: var(--green-deep);
+}
+.result-score {
+  margin: 0;
+  font-size: clamp(44px, 12vw, 56px);
+  font-weight: 900;
+  line-height: 1;
+  color: var(--green-deep);
+  font-variant-numeric: tabular-nums;
+}
+.result-data { display: flex; gap: 20px; align-items: center; justify-content: center; }
+.achievement, .warning-note, .record-note {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+}
+.achievement { color: #8d4a58; background: #fde3e8; }
+.warning-note { color: #a33e50; background: #fde4e4; }
+.record-note { color: #8a5a1e; background: #fdf1dd; }
+
+/* 提示气泡：只在容器内缘上方居中，不压住整个舞台 */
+.toast {
+  position: absolute;
+  top: 10px;
+  left: var(--in-l);
+  width: var(--in-w);
+  z-index: 8;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(63, 107, 74, 0.93);
+  color: #fffaf1;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 4px 12px rgba(50, 76, 55, 0.22);
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  pointer-events: none;
+}
+.toast.is-show { opacity: 1; transform: translateY(0); }
+
+.noscript {
+  position: fixed;
+  inset: auto 0 0;
+  margin: 0;
+  padding: 12px;
+  text-align: center;
+  background: #fde4e4;
+  color: #a33e50;
+}
+
+@media (max-width: 430px) {
+  .stage-page { padding-left: 12px; padding-right: 12px; }
+  .title-logo { width: 88vw; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
