@@ -696,7 +696,8 @@
       overTime: 0,
       dead: false,
       squash: 0,
-      tilt: 0
+      tilt: 0,
+      sleeping: false
     };
     balls.push(ball);
 
@@ -844,7 +845,8 @@
       overTime: 0,
       dead: false,
       squash: 0.22,
-      tilt: 0
+      tilt: 0,
+      sleeping: false
     };
 
     // 合并时产生物理冲击波：略微推开紧贴的新球周围其他球，形成真实的弹出与空间膨胀反馈
@@ -856,6 +858,12 @@
       const pdy = o.y - my;
       const pdist = Math.hypot(pdx, pdy);
       if (pdist > 0.001 && pdist < blastRadius + o.r) {
+        // 冲击波范围内唤醒休眠球
+        o.sleeping = false;
+        o.restTime = 0;
+        o.settled = false;
+        // 若与新球同级，不被冲击波推开，确保链式合成连续触发
+        if (o.level === level + 1) continue;
         const factor = 1 - pdist / (blastRadius + o.r);
         const pnx = pdx / pdist;
         const pny = pdy / pdist;
@@ -872,6 +880,42 @@
     pendingNewBalls.push(nb);
   }
 
+  function getSupportedBalls() {
+    const supported = new Set();
+    // 1. 地面直接支撑（与地面距离在 2.5px 以内）
+    for (let i = 0; i < balls.length; i++) {
+      const b = balls[i];
+      if (b.dead) continue;
+      if (b.y + b.r >= H - 2.5) supported.add(b);
+    }
+    // 2. 向上/侧向多轮传递支撑：
+    // 若球 o 已被支撑，且球 b 与 o 接触（触距容差 max(touch+3.0, touch*1.04)），
+    // 且 o 不在 b 上方（即 o.y >= b.y - 2.0，o 的位置在 b 的下方或同高侧方），
+    // 则 o 可为 b 提供支撑力，b 也是被支撑的。
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (let i = 0; i < balls.length; i++) {
+        const b = balls[i];
+        if (b.dead || supported.has(b)) continue;
+        for (let j = 0; j < balls.length; j++) {
+          const o = balls[j];
+          if (o.dead || !supported.has(o)) continue;
+          const dx = b.x - o.x;
+          const dy = b.y - o.y;
+          const touch = b.r + o.r;
+          const maxD = Math.max(touch + 3.0, touch * 1.04);
+          if (dy < 2.0 && (dx * dx + dy * dy) <= maxD * maxD) {
+            supported.add(b);
+            changed = true;
+            break;
+          }
+        }
+      }
+    }
+    return supported;
+  }
+
   let pendingNewBalls = [];
 
   function physicsStep(dt) {
@@ -879,22 +923,30 @@
       const b = balls[i];
       if (b.dead) continue;
       b.age += dt;
-      b.vy += GRAVITY * dt;
-      b.vx *= 0.9995;
-      b.x += b.vx * dt;
-      b.y += b.vy * dt;
-      constrainWalls(b);
-      // 滚动角速度：未静止且有横向运动时按 angle += vx / r * dt 更新；静止时保持不变
-      if (!b.settled && Math.abs(b.vx) > 0.05) {
-        b.angle = (b.angle || 0) + (b.vx / b.r) * dt;
-        if (b.angle > Math.PI) b.angle -= TAU;
-        else if (b.angle < -Math.PI) b.angle += TAU;
+      if (!b.sleeping) {
+        b.vy += GRAVITY * dt;
+        b.vx *= 0.9995;
+        b.x += b.vx * dt;
+        b.y += b.vy * dt;
+        constrainWalls(b);
+        // 滚动角速度：未静止且有横向运动时按 angle += vx / r * dt 更新；静止时保持不变
+        if (!b.settled && Math.abs(b.vx) > 0.05) {
+          b.angle = (b.angle || 0) + (b.vx / b.r) * dt;
+          if (b.angle > Math.PI) b.angle -= TAU;
+          else if (b.angle < -Math.PI) b.angle += TAU;
+        }
+        // 挤压回弹 + 倾斜：落地/撞击时压扁，之后按 dt*1.4 衰减；横向速度带来自然的倾斜跟随，静止时回正
+        b.squash = Math.max(0, (b.squash || 0) - dt * 1.4);
+        const tiltTarget = b.settled ? 0 : clamp(b.vx * 0.0006, -0.20, 0.20);
+        b.tilt = (b.tilt || 0) + (tiltTarget - (b.tilt || 0)) * Math.min(1, dt * 10);
+        if (b.y + b.r >= H - 0.5) b.vx *= 0.985; // 贴地滚动阻力
+      } else {
+        b.vx = 0;
+        b.vy = 0;
+        b.squash = Math.max(0, (b.squash || 0) - dt * 1.4);
+        b.tilt = (b.tilt || 0) * (1 - Math.min(1, dt * 10));
+        constrainWalls(b);
       }
-      // 挤压回弹 + 倾斜：落地/撞击时压扁，之后按 dt*1.4 衰减；横向速度带来自然的倾斜跟随，静止时回正
-      b.squash = Math.max(0, (b.squash || 0) - dt * 1.4);
-      const tiltTarget = b.settled ? 0 : clamp(b.vx * 0.0006, -0.20, 0.20);
-      b.tilt = (b.tilt || 0) + (tiltTarget - (b.tilt || 0)) * Math.min(1, dt * 10);
-      if (b.y + b.r >= H - 0.5) b.vx *= 0.985; // 贴地滚动阻力
     }
 
     // 碰撞与合并求解：
@@ -917,8 +969,8 @@
           const touch = a.r + b.r;
 
           if (iter === 0 && a.level === b.level) {
-            const mergeDist = touch * 0.95;
-            if (d2 < mergeDist * mergeDist) {
+            const mergeDist = touch + 0.5;
+            if (d2 <= mergeDist * mergeDist) {
               a.dead = true;
               b.dead = true;
               doMerge(a, b);
@@ -926,9 +978,20 @@
             }
           }
 
-          const sameLevel = a.level === b.level;
-          const minDist = sameLevel ? touch * 0.949 : touch;
+          const minDist = touch;
           if (d2 < minDist * minDist) {
+            // 撞击/明显受力唤醒休眠球
+            if (a.sleeping || b.sleeping) {
+              const spA = a.vx * a.vx + a.vy * a.vy;
+              const spB = b.vx * b.vx + b.vy * b.vy;
+              if (spA > 100 || spB > 100) {
+                a.sleeping = false;
+                b.sleeping = false;
+                a.restTime = 0;
+                b.restTime = 0;
+              }
+            }
+
             let d = Math.sqrt(d2);
             if (d < 0.001) {
               d = 0.001;
@@ -959,6 +1022,12 @@
 
                 // 速度阈值：微小相对速度（重力下自然接触，-vn <= 35）不反弹，避免堆叠微振动；冲击反弹系数调低至 0.04
                 const isImpact = -vn > 35;
+                if (isImpact) {
+                  a.sleeping = false;
+                  b.sleeping = false;
+                  a.restTime = 0;
+                  b.restTime = 0;
+                }
                 const e = isImpact ? 0.04 : 0;
                 const impulse = (-(1 + e) * vn) / (1 / ma + 1 / mb);
                 a.vx -= (impulse * nx) / ma;
@@ -995,16 +1064,46 @@
       pendingNewBalls = [];
     }
 
-    // 静止判定与微抖动收敛
+    // 静止判定、支撑休眠与速度收敛
+    const supported = getSupportedBalls();
     for (let i = 0; i < balls.length; i++) {
       const b = balls[i];
-      const sp2 = b.vx * b.vx + b.vy * b.vy;
-      if (sp2 < 900) b.restTime += dt;
-      else b.restTime = 0;
+      if (b.dead) continue;
+      const isSupp = supported.has(b);
 
-      if (sp2 < 25) {
-        b.vx = 0;
-        b.vy = 0;
+      // 若处于休眠状态但已失去下方支撑（如下方球合成消除），立即唤醒恢复下落
+      if (b.sleeping && !isSupp) {
+        b.sleeping = false;
+        b.restTime = 0;
+        b.settled = false;
+      }
+
+      // 被支撑的球：当下冲微速度已被支撑面阻挡且横向微动已衰减时，速度归零，消除周期性上下抖动
+      if (isSupp) {
+        if (Math.abs(b.vy) < 50 && Math.abs(b.vx) < 30) {
+          b.vx = 0;
+          b.vy = 0;
+        }
+      }
+
+      const sp2 = b.vx * b.vx + b.vy * b.vy;
+      if (sp2 < 900) {
+        b.restTime += dt;
+      } else {
+        b.restTime = 0;
+      }
+
+      if (isSupp) {
+        if (b.restTime >= 0.12 && Math.abs(b.vy) < 1.0 && Math.abs(b.vx) < 1.0) {
+          b.vx = 0;
+          b.vy = 0;
+          b.sleeping = true;
+        }
+      } else {
+        if (sp2 < 25) {
+          b.vx = 0;
+          b.vy = 0;
+        }
       }
       constrainWalls(b);
     }
