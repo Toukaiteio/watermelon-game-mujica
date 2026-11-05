@@ -157,6 +157,8 @@
         musicSlider.value = String(currentMusic);
         musicValue.textContent = currentMusic + '%';
         if (bgm) bgm.volume = currentMusic / 100;
+        // 结算音乐同属「音乐」组，与游戏页保持一致
+        if (gameoverSfx) gameoverSfx.volume = currentMusic / 100;
         if (persist) {
           try { localStorage.setItem('xiangjiao-music-volume-v1', String(currentMusic)); } catch (e) {}
         }
@@ -167,7 +169,6 @@
         sfxSlider.value = String(currentSfx);
         sfxValue.textContent = currentSfx + '%';
         if (mergeSfx) mergeSfx.volume = currentSfx / 100;
-        if (gameoverSfx) gameoverSfx.volume = currentSfx / 100;
         if (persist) {
           try { localStorage.setItem('xiangjiao-sfx-volume-v1', String(currentSfx)); } catch (e) {}
         }

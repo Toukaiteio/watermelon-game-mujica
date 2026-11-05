@@ -381,8 +381,10 @@
       mergeSfx.volume = sfxVol / 100;
       mergeSfx.muted = isMuted;
     }
+    // 结算音乐是一段音乐而非提示音效，跟 BGM 一起受「音乐」音量控制。
+    // 若挂在音效组，用户把音乐调到 0 后结算时仍会按音效音量突然大声播放。
     if (gameoverSfx) {
-      gameoverSfx.volume = sfxVol / 100;
+      gameoverSfx.volume = musicVol / 100;
       gameoverSfx.muted = isMuted;
     }
   }
@@ -440,6 +442,10 @@
 
   function playGameoverSfx() {
     if (!gameoverSfx || gameoverSfx.dataset.unavailable === '1' || isMuted) return;
+    // 播放前再按当前「音乐」音量同步一次：覆盖切后台恢复、静音恢复、
+    // 手势重试等所有重新播放路径，避免沿用一个过时的元素音量。
+    gameoverSfx.volume = musicVol / 100;
+    gameoverSfx.muted = isMuted;
     try {
       gameoverSfx.currentTime = 0;
       const p = gameoverSfx.play();
