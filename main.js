@@ -58,6 +58,23 @@
       gravity: pl.Vec2(0, GRAVITY / SCALE),
       allowSleep: true
     });
+
+    // 合成检测发生在 world.step() 之后，那时速度已被碰撞冲量改写：下落球
+    // 常被刹到接近 0，反而比堆里的球看起来更「静止」，据此无法分辨谁是
+    // 碰撞者、谁是被碰撞者。pre-solve 在 Box2D 速度解算器改写速度之前触发，
+    // 记录到的正是接触那一瞬的真实入射速度。
+    function snapshotImpactVelocity(body) {
+      const ball = body.getUserData && body.getUserData();
+      if (!ball || ball.dead) return;
+      const v = body.getLinearVelocity();
+      ball.impactVx = v.x * SCALE;
+      ball.impactVy = v.y * SCALE;
+    }
+    world.on('pre-solve', (contact) => {
+      snapshotImpactVelocity(contact.getFixtureA().getBody());
+      snapshotImpactVelocity(contact.getFixtureB().getBody());
+    });
+
     groundBody = world.createBody();
     // 底墙：表面位于 y = H (800)
     groundBody.createFixture(pl.Box((W + 200) / 2 / SCALE, 50 / SCALE, pl.Vec2((W / 2) / SCALE, (H + 50) / SCALE)), {
@@ -902,7 +919,11 @@
       spawnX = bestX;
     }
 
-    const vx = (Math.random() - 0.5) * 30;
+    // 垂直落地：不给随机横向初速，落点完全由玩家瞄准决定。
+    // 旧版这里用 (Math.random() - 0.5) * 30 是为了让自写物理下的球「滚开
+    // 而不是堆成柱子」；换成 Planck 后球体自带转动与接触摩擦，不再需要这
+    // 种抖动，反而会让同一落点每局偏移、手感不可预测。
+    const vx = 0;
     const vy = 30;
     const body = createBallBody(spawnX, y, r, vx, vy);
     const ball = {
@@ -1101,17 +1122,23 @@
   // ---------------------------------------------------------------
   // 物理与合成
   // ---------------------------------------------------------------
+  // 返回「被碰撞者」：新球应在它原来的位置生成，避免合成把球往上搬。
+  // 判据用 pre-solve 采集的接触瞬间入射速度，而不是 world.step() 之后的
+  // 速度（后者已被碰撞冲量改写，下落球会被刹停到看起来比堆里球更静止）。
   function pickContacted(a, b) {
-    const preSpeedA = Math.hypot(a.prevVx !== undefined ? a.prevVx : a.vx, a.prevVy !== undefined ? a.prevVy : a.vy);
-    const preSpeedB = Math.hypot(b.prevVx !== undefined ? b.prevVx : b.vx, b.prevVy !== undefined ? b.prevVy : b.vy);
-    const aSettled = (a.settled === true || Boolean(a.body && typeof a.body.isAwake === 'function' && !a.body.isAwake())) && preSpeedA < 40;
-    const bSettled = (b.settled === true || Boolean(b.body && typeof b.body.isAwake === 'function' && !b.body.isAwake())) && preSpeedB < 40;
-    if (aSettled !== bSettled) {
-      return aSettled ? a : b;
+    const speedOf = (o) => {
+      const vx = o.impactVx !== undefined ? o.impactVx : (o.prevVx !== undefined ? o.prevVx : o.vx);
+      const vy = o.impactVy !== undefined ? o.impactVy : (o.prevVy !== undefined ? o.prevVy : o.vy);
+      return Math.hypot(vx, vy);
+    };
+    const aSpeed = speedOf(a);
+    const bSpeed = speedOf(b);
+    // 速度明显更大的一方是主动撞上来的，另一方就是被碰撞者。
+    if (Math.abs(aSpeed - bSpeed) >= 1) {
+      return aSpeed > bSpeed ? b : a;
     }
-    if (Math.abs(preSpeedA - preSpeedB) >= 1e-6) {
-      return preSpeedA < preSpeedB ? a : b;
-    }
+    // 速度相当（例如两球都已静止、链式合成）：取更靠下的球，且严格
+    // 不受数组顺序 / 左右位置影响，保证结果只由物理状态决定。
     if (Math.abs(a.y - b.y) >= 1e-6) {
       return a.y > b.y ? a : b;
     }
@@ -1150,8 +1177,12 @@
 
     const contacted = pickContacted(a, b);
     const nr = RADII[level]; // 下一级半径（level 为 1-indexed）
-    const nvx = (a.vx + b.vx) * 0.4;
-    const nvy = Math.min(-24, (a.vy + b.vy) * 0.20 - (24 + nr * 0.12));
+    // 合成不应凭空注入向上能量：旧的 nvy = min(-24, ...) 每次都给新球一个
+    // 向上的发射速度，冲击波里还带 -10/SCALE 的恒定上抬，反复合成会把整堆
+    // 球一点点顶向危险线，并在下方留出真空。改为继承被碰撞球碰撞后残余
+    // 速度的水平分量，垂直分量只保留向下的部分，绝不主动向上。
+    const nvx = contacted.vx * 0.4;
+    const nvy = Math.max(0, contacted.vy * 0.2);
     const nx = clamp(contacted.x, nr, W - nr);
     const ny = clamp(contacted.y, nr, H - nr);
 
@@ -1174,7 +1205,9 @@
     };
     body.setUserData(nb);
 
-    // 合并时产生物理冲击波：略微推开紧贴的新球周围其他球，形成真实的弹出与空间膨胀反馈
+    // 合并时产生物理冲击波：略微水平推开紧贴新球的其他球，形成空间膨胀反馈。
+    // 注意不加任何恒定上抬分量：那等于每次合成都给整堆球一次向上的冲量，
+    // 累积起来就是「球堆不停向上跑、下方一大块真空」的主因之一。
     const blastRadius = nr * 1.35;
     for (let k = 0; k < balls.length; k++) {
       const o = balls[k];
@@ -1187,12 +1220,12 @@
       if (pdist > 0.001 && pdist < blastRadius + o.r) {
         const factor = 1 - pdist / (blastRadius + o.r);
         const pnx = pdx / pdist;
-        const pny = pdy / pdist;
         const push = factor * (36 / SCALE);
         const vel = o.body.getLinearVelocity();
+        // 只改水平分量，垂直速度原样保留：绝不在这里给球堆任何向上冲量。
         o.body.setLinearVelocity(pl.Vec2(
           vel.x + pnx * push,
-          vel.y + pny * push - (10 / SCALE)
+          vel.y
         ));
       }
     }
@@ -1210,6 +1243,10 @@
       if (b.dead) continue;
       b.prevVx = b.vx;
       b.prevVy = b.vy;
+      // 每个物理步都清掉上一步的接触快照，保证 pre-solve 写入的
+      // impactVx/impactVy 只反映「本步」的接触，不会拿陈旧值误判。
+      b.impactVx = undefined;
+      b.impactVy = undefined;
     }
 
     world.step(dt, VELOCITY_ITERATIONS, POSITION_ITERATIONS);
