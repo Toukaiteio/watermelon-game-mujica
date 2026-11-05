@@ -42,6 +42,54 @@
 
   const RADII = [16, 24, 34, 44, 54, 66, 78, 92, 108, 128, 150];
 
+  // ---------------------------------------------------------------
+  // 物理配置（Planck.js / Box2D 纯 JS 移植）
+  // ---------------------------------------------------------------
+  const pl = typeof planck !== 'undefined' ? planck : (typeof window !== 'undefined' ? window.planck : null);
+  const SCALE = 50.0;                 // 50 逻辑单位 = 1 米，Lv.1 半径 0.32m，Lv.11 半径 3.0m
+  const VELOCITY_ITERATIONS = 8;
+  const POSITION_ITERATIONS = 3;
+
+  let world = null;
+  let groundBody = null;
+
+  function initPhysicsWorld() {
+    world = new pl.World({
+      gravity: pl.Vec2(0, GRAVITY / SCALE),
+      allowSleep: true
+    });
+    groundBody = world.createBody();
+    // 底墙：表面位于 y = H (800)
+    groundBody.createFixture(pl.Box((W + 200) / 2 / SCALE, 50 / SCALE, pl.Vec2((W / 2) / SCALE, (H + 50) / SCALE)), {
+      friction: 0.4
+    });
+    // 左墙：内表面位于 x = 0，向上延伸至 -300px
+    groundBody.createFixture(pl.Box(50 / SCALE, 550 / SCALE, pl.Vec2(-50 / SCALE, (H / 2 - 100) / SCALE)), {
+      friction: 0.4
+    });
+    // 右墙：内表面位于 x = W (398)，向上延伸至 -300px
+    groundBody.createFixture(pl.Box(50 / SCALE, 550 / SCALE, pl.Vec2((W + 50) / SCALE, (H / 2 - 100) / SCALE)), {
+      friction: 0.4
+    });
+  }
+
+  function createBallBody(x, y, r, vx, vy) {
+    const body = world.createDynamicBody({
+      position: pl.Vec2(x / SCALE, y / SCALE),
+      linearVelocity: pl.Vec2((vx || 0) / SCALE, (vy || 0) / SCALE),
+      bullet: true,
+      allowSleep: true,
+      linearDamping: 0.05,
+      angularDamping: 0.2
+    });
+    body.createFixture(pl.Circle(r / SCALE), {
+      density: 1.0,
+      friction: 0.4,
+      restitution: 0.0
+    });
+    return body;
+  }
+
   // 等级 1..11：素材、称呼、描边色。level 为 1-indexed。
   const FRUITS = [
     { level: 1,  name: '樱桃',   who: '要乐奈',   file: 'rana-lv1-cherry-v2-cutout.png',           ring: '#d9647c', pale: '#fbe1e5' },
@@ -245,11 +293,33 @@
   let sfxVol = 72;
   let isMuted = false;
   let bgmStarted = false;
+  let bgmPlayPending = false;
+  let autoPaused = false;
+  let audioToResume = null; // 'bgm' | 'gameover' | null
 
   [bgm, mergeSfx, gameoverSfx].forEach((a) => {
     if (!a) return;
     a.addEventListener('error', () => { a.dataset.unavailable = '1'; });
   });
+
+  if (bgm) {
+    bgm.loop = true;
+    bgm.addEventListener('playing', () => {
+      bgmStarted = true;
+    });
+    bgm.addEventListener('pause', () => {
+      if (state !== 'playing' && state !== 'warning') {
+        bgmStarted = false;
+      }
+    });
+    ['canplay', 'canplaythrough'].forEach((evt) => {
+      bgm.addEventListener(evt, () => {
+        if ((state === 'playing' || state === 'warning') && !isMuted && (!bgmStarted || bgm.paused)) {
+          playBgm();
+        }
+      });
+    });
+  }
 
   function loadVolumes() {
     let mRaw = safeStorageGet(STORAGE_MUSIC);
@@ -295,29 +365,44 @@
     }
   });
 
-  function tryPlay(audio) {
-    if (!audio || audio.dataset.unavailable === '1') return;
-    try {
-      const p = audio.play();
-      if (p && typeof p.catch === 'function') p.catch(() => {});
-    } catch (e) {
-      /* 自动播放被拦截或文件缺失：静默忽略 */
-    }
-  }
-
   function playBgm() {
-    if (!bgm) return;
-    bgmStarted = true;
-    tryPlay(bgm);
+    if (!bgm || bgm.dataset.unavailable === '1' || isMuted) return;
+    if (state !== 'playing' && state !== 'warning') return;
+    if (!bgm.paused) {
+      bgmStarted = true;
+      return;
+    }
+    if (bgmPlayPending) return;
+    bgmPlayPending = true;
+    try {
+      const p = bgm.play();
+      if (p && typeof p.then === 'function') {
+        p.then(() => {
+          bgmPlayPending = false;
+          bgmStarted = true;
+        }).catch(() => {
+          bgmPlayPending = false;
+          bgmStarted = false;
+        });
+      } else {
+        bgmPlayPending = false;
+        bgmStarted = !bgm.paused;
+      }
+    } catch (e) {
+      bgmPlayPending = false;
+      bgmStarted = false;
+    }
   }
 
   function stopBgm() {
     if (!bgm) return;
+    bgmPlayPending = false;
     try { bgm.pause(); } catch (e) { /* 忽略 */ }
+    bgmStarted = false;
   }
 
   function playMergeSfx() {
-    if (!mergeSfx) return;
+    if (!mergeSfx || mergeSfx.dataset.unavailable === '1' || isMuted) return;
     try {
       mergeSfx.currentTime = 0;
       const p = mergeSfx.play();
@@ -326,7 +411,7 @@
   }
 
   function playGameoverSfx() {
-    if (!gameoverSfx) return;
+    if (!gameoverSfx || gameoverSfx.dataset.unavailable === '1' || isMuted) return;
     try {
       gameoverSfx.currentTime = 0;
       const p = gameoverSfx.play();
@@ -355,8 +440,22 @@
     isMuted = !isMuted;
     applyAudioVolumes();
     applySoundButton();
-    if (!isMuted && (state === 'playing' || state === 'warning') && bgmStarted) {
-      playBgm();
+    if (isMuted) {
+      if (bgm) {
+        try { bgm.pause(); } catch (e) {}
+      }
+      bgmStarted = false;
+    } else {
+      if (state === 'playing' || state === 'warning') {
+        playBgm();
+      } else if (state === 'over' && audioToResume === 'gameover') {
+        if (gameoverSfx) {
+          try {
+            const p = gameoverSfx.play();
+            if (p && typeof p.catch === 'function') p.catch(() => {});
+          } catch (e) {}
+        }
+      }
     }
   }
 
@@ -499,6 +598,7 @@
   let particles = [];
   let mergeLogs = [];
   let dropLogs = [];
+  let pendingNewBalls = [];
 
   let currentLevel = 1;
   let nextLevel = 1;
@@ -526,10 +626,12 @@
   }
 
   function resetRun() {
+    initPhysicsWorld();
     balls = [];
     particles = [];
     mergeLogs = [];
     dropLogs = [];
+    pendingNewBalls = [];
     currentLevel = randomSpawnLevel();
     nextLevel = randomSpawnLevel();
     aimX = W / 2;
@@ -549,7 +651,12 @@
     resetRun();
     state = 'playing';
     hideScreens();
+    autoPaused = false;
+    audioToResume = null;
     stopGameoverSfx();
+    if (bgm) {
+      try { bgm.currentTime = 0; } catch (e) {}
+    }
     lastFrame = performance.now();
     playBgm();
     updateControls();
@@ -565,13 +672,12 @@
     stopBgm();
     showScreen(pauseScreen);
     updateControls();
-    if (fromVisibility) {
-      // 自动暂停与手动暂停一致：切回来不自动继续，避免玩家没准备好。
-    }
+    autoPaused = !!fromVisibility;
   }
 
   function resumeGame() {
     if (state !== 'paused') return;
+    autoPaused = false;
     state = resumeState === 'warning' ? 'warning' : 'playing';
     hideScreens();
     lastFrame = performance.now();
@@ -583,6 +689,9 @@
   function backToMenu() {
     // 开始界面是单独的 index.html，不是游戏页里的小卡片
     stopBgm();
+    if (bgm) {
+      try { bgm.currentTime = 0; } catch (e) {}
+    }
     stopGameoverSfx();
     window.location.href = 'index.html';
   }
@@ -599,6 +708,8 @@
   function finishGame() {
     if (state === 'over') return;
     state = 'over';
+    autoPaused = false;
+    audioToResume = null;
     stopBgm();
 
     const snapshot = balls.map((b) => ({ level: b.level, x: b.x, y: b.y, r: b.r }));
@@ -673,36 +784,68 @@
     if (!canDrop()) return;
     const t = now();
     const r = RADII[currentLevel - 1];
-    // 2026-11-04 纠正：上一版测试在同一 x 连掉 8 次，圆球在完全
-    // 对齐的垂直接触下没有横向力，垒成了一根完美的柱子——这不是
-    // 正常玩法，是测试方法 + 物理无扰动造成的假象。真实玩法里
-    // 玩家每次瞄准 x 都不同，但为了让即使同 x 连掉也不垒成柱子，
-    // 掉落时加一个极小的横向初速（±15 逻辑单位/秒，远小于球半径
-    // 对应的下落速度），球会自然向一侧滚开、堆成一堆，而不是柱子。
-    // 抖动只影响初始 vx，不影响等级、分数、碰撞规则。
-    const x = clamp(aimX, r + 2, W - r - 2);
+    let spawnX = clamp(aimX, r + 2, W - r - 2);
     const y = LINE_Y - r - 10;
+
+    // A-04: 生成前检查生成圆是否与已有球重叠，避免刷在球内
+    function checkOverlap(tx) {
+      for (let i = 0; i < balls.length; i++) {
+        const o = balls[i];
+        if (o.dead) continue;
+        const dx = tx - o.x;
+        const dy = y - o.y;
+        const minDist = r + o.r;
+        if (dx * dx + dy * dy < minDist * minDist) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    if (checkOverlap(spawnX)) {
+      const minX = r + 2;
+      const maxX = W - r - 2;
+      let bestX = null;
+      let bestDist = Infinity;
+      for (let tx = minX; tx <= maxX; tx += 2) {
+        if (!checkOverlap(tx)) {
+          const d = Math.abs(tx - spawnX);
+          if (d < bestDist) {
+            bestDist = d;
+            bestX = tx;
+          }
+        }
+      }
+      if (bestX === null) {
+        // 板内已无无重叠位置（堆已顶到生成区），按堆满处理进入警告/结算路径
+        triggerWarning();
+        return;
+      }
+      spawnX = bestX;
+    }
+
+    const vx = (Math.random() - 0.5) * 30;
+    const vy = 30;
+    const body = createBallBody(spawnX, y, r, vx, vy);
     const ball = {
       level: currentLevel,
-      x,
+      body,
+      x: spawnX,
       y,
-      vx: (Math.random() - 0.5) * 30,
-      vy: 30,
+      vx,
+      vy,
       r,
       angle: 0,
       age: 0,
-      restTime: 0,
       settled: false,
       overTime: 0,
-      dead: false,
-      squash: 0,
-      tilt: 0,
-      sleeping: false
+      dead: false
     };
+    body.setUserData(ball);
     balls.push(ball);
 
     // 掉落日志：分数不在这里加，只记录事实
-    dropLogs.push({ level: currentLevel, x: x, timeMs: t });
+    dropLogs.push({ level: currentLevel, x: spawnX, timeMs: t });
 
     cooldownUntil = t + DROP_COOLDOWN_MS;
     currentLevel = nextLevel;
@@ -723,7 +866,7 @@
   });
 
   canvas.addEventListener('pointerdown', (e) => {
-    if (state === 'playing' && !bgmStarted) playBgm();
+    if (state === 'playing' && (!bgmStarted || (bgm && bgm.paused))) playBgm();
     if (state !== 'playing') return;
     pointerActive = true;
     pointerId = e.pointerId;
@@ -772,10 +915,74 @@
     }
   });
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      if (state === 'playing' || state === 'warning') pauseGame(true);
+  function retryAudioOnGesture() {
+    if ((state === 'playing' || state === 'warning') && !isMuted) {
+      if (!bgmStarted || (bgm && bgm.paused)) {
+        playBgm();
+      }
+    } else if (state === 'over' && audioToResume === 'gameover' && !isMuted) {
+      if (gameoverSfx && gameoverSfx.paused) {
+        const p = gameoverSfx.play();
+        if (p && typeof p.then === 'function') {
+          p.then(() => { audioToResume = null; }).catch(() => {});
+        } else {
+          audioToResume = null;
+        }
+      }
     }
+  }
+
+  ['pointerdown', 'touchstart', 'click', 'keydown'].forEach((evt) => {
+    window.addEventListener(evt, retryAudioOnGesture, { passive: true });
+  });
+
+  function handleVisibilityChange(isHidden) {
+    if (isHidden) {
+      if (state === 'playing' || state === 'warning') {
+        const wasBgm = !!(bgm && !bgm.paused);
+        audioToResume = wasBgm ? 'bgm' : null;
+        pauseGame(true);
+      } else if (state === 'over') {
+        if (gameoverSfx && !gameoverSfx.paused) {
+          audioToResume = 'gameover';
+          try { gameoverSfx.pause(); } catch (e) {}
+        } else {
+          audioToResume = null;
+        }
+      }
+    } else {
+      if (autoPaused && state === 'paused') {
+        autoPaused = false;
+        const resumeBgm = audioToResume === 'bgm';
+        audioToResume = null;
+        resumeGame();
+        if (resumeBgm) {
+          playBgm();
+        } else if (bgm && !bgm.paused) {
+          try { bgm.pause(); } catch (e) {}
+        }
+      } else if (state === 'over' && audioToResume === 'gameover') {
+        audioToResume = null;
+        if (gameoverSfx && !isMuted) {
+          try {
+            const p = gameoverSfx.play();
+            if (p && typeof p.catch === 'function') p.catch(() => {});
+          } catch (e) {}
+        }
+      }
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    handleVisibilityChange(document.hidden);
+  });
+
+  window.addEventListener('pagehide', () => {
+    handleVisibilityChange(true);
+  });
+
+  window.addEventListener('pageshow', () => {
+    handleVisibilityChange(false);
   });
 
   window.addEventListener('blur', () => {
@@ -783,31 +990,37 @@
   });
 
   // ---------------------------------------------------------------
+  // 移动端防下拉刷新：接管舞台/棋盘触摸滑动，允许设置面板滚动
+  // ---------------------------------------------------------------
+  let touchStartInsideStage = false;
+
+  window.addEventListener('touchstart', (e) => {
+    const t = e.touches[0];
+    if (!t) return;
+    const target = (t && t.target) || e.target;
+    const stageEl = document.getElementById('stage') || document.getElementById('boardWrap');
+    const isInsideStage = stageEl ? stageEl.contains(target) : false;
+    const isInsideScrollable = target.closest && target.closest('.settings-panel, .screen, .panel, [data-scrollable]');
+    touchStartInsideStage = isInsideStage && !isInsideScrollable;
+  }, { passive: true });
+
+  window.addEventListener('touchmove', (e) => {
+    if (touchStartInsideStage && window.scrollY <= 0) {
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+    }
+  }, { passive: false });
+
+  ['touchend', 'touchcancel'].forEach((evt) => {
+    window.addEventListener(evt, () => {
+      touchStartInsideStage = false;
+    }, { passive: true });
+  });
+
+  // ---------------------------------------------------------------
   // 物理与合成
   // ---------------------------------------------------------------
-  function constrainWalls(b) {
-    // 框的内缘就是墙：左右下墙 + 顶部，撞墙要回弹、落地要压扁、贴地要滚得慢下来
-    if (b.x - b.r < 0) {
-      b.x = b.r;
-      if (b.vx < 0) { b.squash = Math.max(b.squash || 0, Math.min(0.22, Math.abs(b.vx) / 1800)); b.vx = -b.vx * 0.14; }
-    } else if (b.x + b.r > W) {
-      b.x = W - b.r;
-      if (b.vx > 0) { b.squash = Math.max(b.squash || 0, Math.min(0.22, Math.abs(b.vx) / 1800)); b.vx = -b.vx * 0.14; }
-    }
-    if (b.y + b.r > H) {
-      b.y = H - b.r;
-      if (b.vy > 0) {
-        b.squash = Math.max(b.squash || 0, Math.min(0.30, Math.abs(b.vy) / 2200));
-        b.vy = -b.vy * 0.12;
-        if (Math.abs(b.vy) < 22) b.vy = 0;
-      }
-      b.vx *= 0.92; // 贴地滚动摩擦，比空中大得多
-    } else if (b.y - b.r < 0) {
-      b.y = b.r;
-      if (b.vy < 0) b.vy = -b.vy * 0.10;
-    }
-  }
-
   function doMerge(a, b) {
     const level = a.level;
     const mx = (a.x + b.x) / 2;
@@ -817,6 +1030,14 @@
     mergeLogs.push({ level, timeMs: t, scoreAdd: gained });
     scoreValue.textContent = String(computeScore());
     maxMergedLevel = Math.max(maxMergedLevel, level >= 11 ? 11 : level + 1);
+
+    // 唤醒所有存活球，防止被承托球在支撑消除后悬空定格
+    for (let k = 0; k < balls.length; k++) {
+      const o = balls[k];
+      if (o.dead || o === a || o === b) continue;
+      o.body.setAwake(true);
+      o.settled = false;
+    }
 
     if (level >= 11) {
       // 11 + 11：两者消失，66 分，大祥脚提示与成就
@@ -830,47 +1051,49 @@
       return;
     }
 
-    const nr = RADII[level]; // 下一级半径（level 1-indexed）
+    const nr = RADII[level]; // 下一级半径（level 为 1-indexed）
+    const nvx = (a.vx + b.vx) * 0.4;
+    const nvy = Math.min(-24, (a.vy + b.vy) * 0.20 - (24 + nr * 0.12));
+    const nx = clamp(mx, nr, W - nr);
+    const ny = clamp(my, nr, H - nr);
+
+    const body = createBallBody(nx, ny, nr, nvx, nvy);
     const nb = {
       level: level + 1,
-      x: clamp(mx, nr, W - nr),
-      y: clamp(my, nr, H - nr),
-      vx: (a.vx + b.vx) * 0.4,
-      vy: Math.min(-24, (a.vy + b.vy) * 0.20 - (24 + nr * 0.12)),
+      body,
+      x: nx,
+      y: ny,
+      vx: nvx,
+      vy: nvy,
       r: nr,
       angle: 0,
       age: 0,
-      restTime: 0,
       settled: false,
       overTime: 0,
-      dead: false,
-      squash: 0.22,
-      tilt: 0,
-      sleeping: false
+      dead: false
     };
+    body.setUserData(nb);
 
     // 合并时产生物理冲击波：略微推开紧贴的新球周围其他球，形成真实的弹出与空间膨胀反馈
     const blastRadius = nr * 1.35;
     for (let k = 0; k < balls.length; k++) {
       const o = balls[k];
       if (o.dead || o === a || o === b) continue;
+      // 若与新球同级，不被冲击波推开，确保链式合成连续触发
+      if (o.level === level + 1) continue;
       const pdx = o.x - mx;
       const pdy = o.y - my;
       const pdist = Math.hypot(pdx, pdy);
       if (pdist > 0.001 && pdist < blastRadius + o.r) {
-        // 冲击波范围内唤醒休眠球
-        o.sleeping = false;
-        o.restTime = 0;
-        o.settled = false;
-        // 若与新球同级，不被冲击波推开，确保链式合成连续触发
-        if (o.level === level + 1) continue;
         const factor = 1 - pdist / (blastRadius + o.r);
         const pnx = pdx / pdist;
         const pny = pdy / pdist;
-        const push = factor * 36;
-        o.vx += pnx * push;
-        o.vy += pny * push - 10;
-        o.squash = Math.max(o.squash || 0, factor * 0.15);
+        const push = factor * (36 / SCALE);
+        const vel = o.body.getLinearVelocity();
+        o.body.setLinearVelocity(pl.Vec2(
+          vel.x + pnx * push,
+          vel.y + pny * push - (10 / SCALE)
+        ));
       }
     }
 
@@ -880,247 +1103,90 @@
     pendingNewBalls.push(nb);
   }
 
-  function getSupportedBalls() {
-    const supported = new Set();
-    // 1. 地面直接支撑（与地面距离在 2.5px 以内）
-    for (let i = 0; i < balls.length; i++) {
-      const b = balls[i];
-      if (b.dead) continue;
-      if (b.y + b.r >= H - 2.5) supported.add(b);
-    }
-    // 2. 向上/侧向多轮传递支撑：
-    // 若球 o 已被支撑，且球 b 与 o 接触（触距容差 max(touch+3.0, touch*1.04)），
-    // 且 o 不在 b 上方（即 o.y >= b.y - 2.0，o 的位置在 b 的下方或同高侧方），
-    // 则 o 可为 b 提供支撑力，b 也是被支撑的。
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (let i = 0; i < balls.length; i++) {
-        const b = balls[i];
-        if (b.dead || supported.has(b)) continue;
-        for (let j = 0; j < balls.length; j++) {
-          const o = balls[j];
-          if (o.dead || !supported.has(o)) continue;
-          const dx = b.x - o.x;
-          const dy = b.y - o.y;
-          const touch = b.r + o.r;
-          const maxD = Math.max(touch + 3.0, touch * 1.04);
-          if (dy < 2.0 && (dx * dx + dy * dy) <= maxD * maxD) {
-            supported.add(b);
-            changed = true;
-            break;
-          }
-        }
-      }
-    }
-    return supported;
-  }
-
-  let pendingNewBalls = [];
 
   function physicsStep(dt) {
+    world.step(dt, VELOCITY_ITERATIONS, POSITION_ITERATIONS);
+
+    // 同步身体状态至 balls 数组（坐标、角度由库全权驱动，无自写位移算角）
     for (let i = 0; i < balls.length; i++) {
       const b = balls[i];
       if (b.dead) continue;
+      const pos = b.body.getPosition();
+      b.x = pos.x * SCALE;
+      b.y = pos.y * SCALE;
+      b.angle = b.body.getAngle();
+      const vel = b.body.getLinearVelocity();
+      b.vx = vel.x * SCALE;
+      b.vy = vel.y * SCALE;
       b.age += dt;
-      if (!b.sleeping) {
-        b.vy += GRAVITY * dt;
-        b.vx *= 0.9995;
-        b.x += b.vx * dt;
-        b.y += b.vy * dt;
-        constrainWalls(b);
-        // 滚动角速度：未静止且有横向运动时按 angle += vx / r * dt 更新；静止时保持不变
-        if (!b.settled && Math.abs(b.vx) > 0.05) {
-          b.angle = (b.angle || 0) + (b.vx / b.r) * dt;
-          if (b.angle > Math.PI) b.angle -= TAU;
-          else if (b.angle < -Math.PI) b.angle += TAU;
-        }
-        // 挤压回弹 + 倾斜：落地/撞击时压扁，之后按 dt*1.4 衰减；横向速度带来自然的倾斜跟随，静止时回正
-        b.squash = Math.max(0, (b.squash || 0) - dt * 1.4);
-        const tiltTarget = b.settled ? 0 : clamp(b.vx * 0.0006, -0.20, 0.20);
-        b.tilt = (b.tilt || 0) + (tiltTarget - (b.tilt || 0)) * Math.min(1, dt * 10);
-        if (b.y + b.r >= H - 0.5) b.vx *= 0.985; // 贴地滚动阻力
-      } else {
-        b.vx = 0;
-        b.vy = 0;
-        b.squash = Math.max(0, (b.squash || 0) - dt * 1.4);
-        b.tilt = (b.tilt || 0) * (1 - Math.min(1, dt * 10));
-        constrainWalls(b);
-      }
     }
 
-    // 碰撞与合并求解：
-    // 增加迭代次数以保证堆叠时无抖动、无穿透；
-    // 合并判定仅在第一遍（iter === 0）时进行，保持规则完全一致；
-    // 相对速度小的接触（静止堆叠）不赋予反弹速度，消除高频微抖动；
-    // 摩擦冲量施加库仑摩擦限制，防止球卡在墙边或互相粘滞。
-    const ITERATIONS = 6;
-    for (let iter = 0; iter < ITERATIONS; iter++) {
+    // 合并检测在世界步进后的安全阶段进行（同级触距 +0.5 即合，支持完整链式合并）
+    let mergedAny = true;
+    while (mergedAny) {
+      mergedAny = false;
       for (let i = 0; i < balls.length; i++) {
         const a = balls[i];
         if (a.dead) continue;
         for (let j = i + 1; j < balls.length; j++) {
           const b = balls[j];
-          if (b.dead) continue;
-
+          if (b.dead || a.level !== b.level) continue;
           const dx = b.x - a.x;
           const dy = b.y - a.y;
-          const d2 = dx * dx + dy * dy;
           const touch = a.r + b.r;
-
-          if (iter === 0 && a.level === b.level) {
-            const mergeDist = touch + 0.5;
-            if (d2 <= mergeDist * mergeDist) {
-              a.dead = true;
-              b.dead = true;
-              doMerge(a, b);
-              break;
-            }
-          }
-
-          const minDist = touch;
-          if (d2 < minDist * minDist) {
-            // 撞击/明显受力唤醒休眠球
-            if (a.sleeping || b.sleeping) {
-              const spA = a.vx * a.vx + a.vy * a.vy;
-              const spB = b.vx * b.vx + b.vy * b.vy;
-              if (spA > 100 || spB > 100) {
-                a.sleeping = false;
-                b.sleeping = false;
-                a.restTime = 0;
-                b.restTime = 0;
-              }
-            }
-
-            let d = Math.sqrt(d2);
-            if (d < 0.001) {
-              d = 0.001;
-              a.x -= 0.05;
-              b.x += 0.05;
-            }
-            const nx = dx / d;
-            const ny = dy / d;
-            const overlap = minDist - d;
-            const ma = a.r * a.r;
-            const mb = b.r * b.r;
-            const total = ma + mb;
-
-            a.x -= nx * overlap * (mb / total);
-            a.y -= ny * overlap * (mb / total);
-            b.x += nx * overlap * (ma / total);
-            b.y += ny * overlap * (ma / total);
-
-            if (iter === 0) {
-              const rvx = b.vx - a.vx;
-              const rvy = b.vy - a.vy;
-              const vn = rvx * nx + rvy * ny;
-              if (vn < 0) {
-                // 撞击压扁：撞得越狠压得越明显
-                const hit = Math.min(0.25, -vn / 2200);
-                a.squash = Math.max(a.squash || 0, hit);
-                b.squash = Math.max(b.squash || 0, hit);
-
-                // 速度阈值：微小相对速度（重力下自然接触，-vn <= 35）不反弹，避免堆叠微振动；冲击反弹系数调低至 0.04
-                const isImpact = -vn > 35;
-                if (isImpact) {
-                  a.sleeping = false;
-                  b.sleeping = false;
-                  a.restTime = 0;
-                  b.restTime = 0;
-                }
-                const e = isImpact ? 0.04 : 0;
-                const impulse = (-(1 + e) * vn) / (1 / ma + 1 / mb);
-                a.vx -= (impulse * nx) / ma;
-                a.vy -= (impulse * ny) / ma;
-                b.vx += (impulse * nx) / mb;
-                b.vy += (impulse * ny) / mb;
-
-                // 切向切线摩擦（限制在库仑摩擦锥内，避免卡在墙边或粘滞）
-                const tx = -ny;
-                const ty = nx;
-                const vt = rvx * tx + rvy * ty;
-                let jt = (-vt / (1 / ma + 1 / mb)) * 0.32;
-                const maxFriction = Math.abs(impulse) * 0.35;
-                jt = clamp(jt, -maxFriction, maxFriction);
-                a.vx -= (jt * tx) / ma;
-                a.vy -= (jt * ty) / ma;
-                b.vx += (jt * tx) / mb;
-                b.vy += (jt * ty) / mb;
-              }
-            }
-            constrainWalls(a);
-            constrainWalls(b);
+          if (dx * dx + dy * dy <= (touch + 0.5) * (touch + 0.5)) {
+            a.dead = true;
+            b.dead = true;
+            world.destroyBody(a.body);
+            world.destroyBody(b.body);
+            doMerge(a, b);
+            mergedAny = true;
+            break;
           }
         }
+        if (mergedAny) break;
       }
-    }
-
-    // 清理已合成掉的球，加入新球
-    if (balls.some((b) => b.dead)) {
-      balls = balls.filter((b) => !b.dead);
-    }
-    if (pendingNewBalls.length) {
-      for (let i = 0; i < pendingNewBalls.length; i++) balls.push(pendingNewBalls[i]);
-      pendingNewBalls = [];
-    }
-
-    // 静止判定、支撑休眠与速度收敛
-    const supported = getSupportedBalls();
-    for (let i = 0; i < balls.length; i++) {
-      const b = balls[i];
-      if (b.dead) continue;
-      const isSupp = supported.has(b);
-
-      // 若处于休眠状态但已失去下方支撑（如下方球合成消除），立即唤醒恢复下落
-      if (b.sleeping && !isSupp) {
-        b.sleeping = false;
-        b.restTime = 0;
-        b.settled = false;
+      if (balls.some((b) => b.dead)) {
+        balls = balls.filter((b) => !b.dead);
       }
-
-      // 被支撑的球：当下冲微速度已被支撑面阻挡且横向微动已衰减时，速度归零，消除周期性上下抖动
-      if (isSupp) {
-        if (Math.abs(b.vy) < 50 && Math.abs(b.vx) < 30) {
-          b.vx = 0;
-          b.vy = 0;
+      if (pendingNewBalls.length > 0) {
+        for (let k = 0; k < pendingNewBalls.length; k++) {
+          balls.push(pendingNewBalls[k]);
         }
+        pendingNewBalls = [];
       }
-
-      const sp2 = b.vx * b.vx + b.vy * b.vy;
-      if (sp2 < 900) {
-        b.restTime += dt;
-      } else {
-        b.restTime = 0;
-      }
-
-      if (isSupp) {
-        if (b.restTime >= 0.12 && Math.abs(b.vy) < 1.0 && Math.abs(b.vx) < 1.0) {
-          b.vx = 0;
-          b.vy = 0;
-          b.sleeping = true;
-        }
-      } else {
-        if (sp2 < 25) {
-          b.vx = 0;
-          b.vy = 0;
-        }
-      }
-      constrainWalls(b);
     }
   }
 
   function updateDanger(dt) {
+    let anyOverLine = false;
     for (let i = 0; i < balls.length; i++) {
       const b = balls[i];
-      if (b.restTime > 0.35) b.settled = true;
+      if (b.dead) continue;
+
+      const sp = Math.hypot(b.vx, b.vy);
+      // 库内置休眠或在场上时间充足且速度低均算 settled
+      if (!b.body.isAwake() || (b.age > 0.35 && sp < 40)) {
+        b.settled = true;
+      }
+
+      // 越线判定：已稳定且顶缘超过危险线
       if (b.settled && b.y - b.r < LINE_Y) {
+        anyOverLine = true;
         b.overTime += dt;
         if (b.overTime >= OVER_LINE_SECONDS && state === 'playing') {
           triggerWarning();
         }
-      } else {
+      } else if (b.y - b.r >= LINE_Y) {
         b.overTime = 0;
       }
+    }
+
+    // A-04: warning 期间若全场已无越线球，取消 warning、回到 playing
+    if (state === 'warning' && !anyOverLine) {
+      state = 'playing';
+      warningLeft = 0;
+      updateControls();
     }
   }
 
