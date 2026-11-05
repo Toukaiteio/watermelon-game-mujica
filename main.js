@@ -1021,6 +1021,23 @@
   // ---------------------------------------------------------------
   // 物理与合成
   // ---------------------------------------------------------------
+  function pickContacted(a, b) {
+    const aSettled = a.settled === true || Boolean(a.body && typeof a.body.isAwake === 'function' && !a.body.isAwake());
+    const bSettled = b.settled === true || Boolean(b.body && typeof b.body.isAwake === 'function' && !b.body.isAwake());
+    if (aSettled !== bSettled) {
+      return aSettled ? a : b;
+    }
+    const aSpeed = Math.hypot(a.vx, a.vy);
+    const bSpeed = Math.hypot(b.vx, b.vy);
+    if (Math.abs(aSpeed - bSpeed) >= 1e-6) {
+      return aSpeed < bSpeed ? a : b;
+    }
+    if (Math.abs(a.y - b.y) >= 1e-6) {
+      return a.y > b.y ? a : b;
+    }
+    return a.x >= b.x ? a : b;
+  }
+
   function doMerge(a, b) {
     const level = a.level;
     const mx = (a.x + b.x) / 2;
@@ -1051,11 +1068,12 @@
       return;
     }
 
+    const contacted = pickContacted(a, b);
     const nr = RADII[level]; // 下一级半径（level 为 1-indexed）
     const nvx = (a.vx + b.vx) * 0.4;
     const nvy = Math.min(-24, (a.vy + b.vy) * 0.20 - (24 + nr * 0.12));
-    const nx = clamp(mx, nr, W - nr);
-    const ny = clamp(my, nr, H - nr);
+    const nx = clamp(contacted.x, nr, W - nr);
+    const ny = clamp(contacted.y, nr, H - nr);
 
     const body = createBallBody(nx, ny, nr, nvx, nvy);
     const nb = {
