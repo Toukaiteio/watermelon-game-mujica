@@ -65,6 +65,43 @@
           </div>
         </section>
 
+        <section class="screen" id="gameSettingsScreen" aria-label="设置">
+          <div class="settings-panel">
+            <h2>设置</h2>
+            <div class="settings-row">
+              <span class="settings-label">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+                音乐
+              </span>
+              <div class="volume-control">
+                <input type="range" class="volume-slider" id="gameMusicSlider" min="0" max="100" step="1" value="42" aria-label="音乐音量">
+                <span class="volume-num" id="gameMusicValue">42%</span>
+              </div>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6.5 9H3v6h3.5L11 19V5Z" fill="currentColor" stroke="none"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9.5 9.5 0 0 1 0 13"/></svg>
+                音效
+              </span>
+              <div class="volume-control">
+                <input type="range" class="volume-slider" id="gameSfxSlider" min="0" max="100" step="1" value="72" aria-label="音效音量">
+                <span class="volume-num" id="gameSfxValue">72%</span>
+              </div>
+            </div>
+            <div class="settings-row">
+              <span class="settings-label">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="#e8b93a" stroke="#1f4228" stroke-width="1" aria-hidden="true"><path d="M12 2.5 14.9 8.6l6.6.9-4.8 4.6 1.2 6.6L12 17.6l-5.9 3.1 1.2-6.6L2.5 9.5l6.6-.9L12 2.5Z"/></svg>
+                最高分 <strong id="gameSettingsBestValue">0</strong>
+              </span>
+              <button class="btn-clear" id="gameClearBestBtn" type="button" aria-label="清除最高分">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                清除
+              </button>
+            </div>
+            <button class="btn-done" id="gameSettingsCloseBtn" type="button">完成</button>
+          </div>
+        </section>
+
         <div class="toast" id="toast" role="status" aria-live="assertive"></div>
       </div>
 
@@ -92,6 +129,9 @@
           </button>
           <button class="icon-btn" id="btnSound" type="button" aria-label="静音" aria-pressed="true" title="静音">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6.5 9H3v6h3.5L11 19V5Z" fill="currentColor" stroke="none"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9.5 9.5 0 0 1 0 13"/></svg>
+          </button>
+          <button class="icon-btn" id="gameSettingsBtn" type="button" aria-label="设置" title="设置">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-.4-1.1 1.7 1.7 0 0 0-1-.6 1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.1-.4 1.7 1.7 0 0 0 .6-1 1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 .4 1.1 1.7 1.7 0 0 0 1 .6 1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.1.4 1.7 1.7 0 0 0-.6 1Z"/></svg>
           </button>
         </div>
       </aside>

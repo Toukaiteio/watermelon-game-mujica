@@ -524,6 +524,21 @@ body {
 .icon-btn.icon-lg { width: 52px; height: 52px; }
 .icon-btn.icon-lg svg { width: 26px; height: 26px; }
 
+/* 结算屏 #overScreen .btn-row 两个按钮统一 72x72 圆形，图标统一 32px */
+#overScreen .btn-row .icon-btn {
+  width: 72px;
+  height: 72px;
+  box-shadow: 0 4px 0 #1f4228, 0 6px 12px rgba(31, 66, 40, 0.15);
+}
+#overScreen .btn-row .icon-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 2px 0 #1f4228;
+}
+#overScreen .btn-row .icon-btn svg {
+  width: 32px;
+  height: 32px;
+}
+
 /* ---------- 暂停 / 结算 / 设置：遮罩只盖棋盘内缘（游戏页）或整页（开始页） ---------- */
 .screen {
   position: absolute;

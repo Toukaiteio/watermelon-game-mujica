@@ -247,6 +247,15 @@
     }
   }
 
+  function safeStorageRemove(key) {
+    try {
+      localStorage.removeItem(key);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   // ---------------------------------------------------------------
   // DOM
   // ---------------------------------------------------------------
@@ -281,6 +290,16 @@
   const pauseMenu = document.getElementById('pauseMenu');
   const overRestart = document.getElementById('overRestart');
   const overMenu = document.getElementById('overMenu');
+
+  const gameSettingsScreen = document.getElementById('gameSettingsScreen');
+  const gameSettingsBtn = document.getElementById('gameSettingsBtn');
+  const gameMusicSlider = document.getElementById('gameMusicSlider');
+  const gameMusicValue = document.getElementById('gameMusicValue');
+  const gameSfxSlider = document.getElementById('gameSfxSlider');
+  const gameSfxValue = document.getElementById('gameSfxValue');
+  const gameSettingsBestValue = document.getElementById('gameSettingsBestValue');
+  const gameClearBestBtn = document.getElementById('gameClearBestBtn');
+  const gameSettingsCloseBtn = document.getElementById('gameSettingsCloseBtn');
 
   // ---------------------------------------------------------------
   // 音频（支持音乐与音效两套独立音量，实时生效，文件缺失时静默跳过）
@@ -342,6 +361,15 @@
       sfxVol = (isNaN(s) || s < 0 || s > 100) ? 72 : s;
     }
     applyAudioVolumes();
+    syncSettingsUI();
+  }
+
+  function syncSettingsUI() {
+    if (gameMusicSlider) gameMusicSlider.value = String(musicVol);
+    if (gameMusicValue) gameMusicValue.textContent = musicVol + '%';
+    if (gameSfxSlider) gameSfxSlider.value = String(sfxVol);
+    if (gameSfxValue) gameSfxValue.textContent = sfxVol + '%';
+    if (gameSettingsBestValue) gameSettingsBestValue.textContent = String(best);
   }
 
   function applyAudioVolumes() {
@@ -593,6 +621,7 @@
   // ---------------------------------------------------------------
   let state = 'menu';          // menu | playing | paused | warning | over
   let resumeState = 'playing'; // 从 playing 或 warning 进入暂停时记住原状态
+  let settingsPaused = false;
 
   let balls = [];
   let particles = [];
@@ -642,6 +671,7 @@
     accumulator = 0;
     pointerActive = false;
     pointerId = null;
+    settingsPaused = false;
     scoreValue.textContent = '0';
     drawNextPreview();
     updateControls();
@@ -652,6 +682,7 @@
     state = 'playing';
     hideScreens();
     autoPaused = false;
+    settingsPaused = false;
     audioToResume = null;
     stopGameoverSfx();
     if (bgm) {
@@ -678,12 +709,51 @@
   function resumeGame() {
     if (state !== 'paused') return;
     autoPaused = false;
+    settingsPaused = false;
     state = resumeState === 'warning' ? 'warning' : 'playing';
     hideScreens();
     lastFrame = performance.now();
     accumulator = 0;
     updateControls();
     playBgm();
+  }
+
+  function openSettings() {
+    if (gameSettingsScreen && gameSettingsScreen.classList.contains('is-visible')) return;
+    if (state === 'playing' || state === 'warning') {
+      settingsPaused = true;
+      pauseGame(false);
+    } else {
+      settingsPaused = false;
+    }
+    syncSettingsUI();
+    showScreen(gameSettingsScreen);
+  }
+
+  function closeSettings() {
+    if (!gameSettingsScreen || !gameSettingsScreen.classList.contains('is-visible')) return;
+    if (settingsPaused) {
+      settingsPaused = false;
+      resumeGame();
+    } else if (state === 'paused') {
+      showScreen(pauseScreen);
+      updateControls();
+    } else if (state === 'over') {
+      showScreen(overScreen);
+      updateControls();
+    } else {
+      hideScreens();
+      updateControls();
+    }
+  }
+
+  function clearBest() {
+    safeStorageRemove(STORAGE_BEST);
+    best = 0;
+    bestTampered = false;
+    if (bestValue) bestValue.textContent = '0';
+    if (gameSettingsBestValue) gameSettingsBestValue.textContent = '0';
+    if (finalBest) finalBest.textContent = '0';
   }
 
   function backToMenu() {
@@ -722,10 +792,12 @@
       best = shownScore;
       bestValue.textContent = String(best);
       finalBest.textContent = String(best);
+      if (gameSettingsBestValue) gameSettingsBestValue.textContent = String(best);
       saveBest(best, mergeLogs.length, dropLogs.length);
       newRecordNote.hidden = false;
     } else {
       finalBest.textContent = String(best);
+      if (gameSettingsBestValue) gameSettingsBestValue.textContent = String(best);
       newRecordNote.hidden = true;
     }
 
@@ -834,6 +906,8 @@
       y,
       vx,
       vy,
+      prevVx: vx,
+      prevVy: vy,
       r,
       angle: 0,
       age: 0,
@@ -1022,15 +1096,15 @@
   // 物理与合成
   // ---------------------------------------------------------------
   function pickContacted(a, b) {
-    const aSettled = a.settled === true || Boolean(a.body && typeof a.body.isAwake === 'function' && !a.body.isAwake());
-    const bSettled = b.settled === true || Boolean(b.body && typeof b.body.isAwake === 'function' && !b.body.isAwake());
+    const preSpeedA = Math.hypot(a.prevVx !== undefined ? a.prevVx : a.vx, a.prevVy !== undefined ? a.prevVy : a.vy);
+    const preSpeedB = Math.hypot(b.prevVx !== undefined ? b.prevVx : b.vx, b.prevVy !== undefined ? b.prevVy : b.vy);
+    const aSettled = (a.settled === true || Boolean(a.body && typeof a.body.isAwake === 'function' && !a.body.isAwake())) && preSpeedA < 40;
+    const bSettled = (b.settled === true || Boolean(b.body && typeof b.body.isAwake === 'function' && !b.body.isAwake())) && preSpeedB < 40;
     if (aSettled !== bSettled) {
       return aSettled ? a : b;
     }
-    const aSpeed = Math.hypot(a.vx, a.vy);
-    const bSpeed = Math.hypot(b.vx, b.vy);
-    if (Math.abs(aSpeed - bSpeed) >= 1e-6) {
-      return aSpeed < bSpeed ? a : b;
+    if (Math.abs(preSpeedA - preSpeedB) >= 1e-6) {
+      return preSpeedA < preSpeedB ? a : b;
     }
     if (Math.abs(a.y - b.y) >= 1e-6) {
       return a.y > b.y ? a : b;
@@ -1083,6 +1157,8 @@
       y: ny,
       vx: nvx,
       vy: nvy,
+      prevVx: nvx,
+      prevVy: nvy,
       r: nr,
       angle: 0,
       age: 0,
@@ -1123,6 +1199,13 @@
 
 
   function physicsStep(dt) {
+    for (let i = 0; i < balls.length; i++) {
+      const b = balls[i];
+      if (b.dead) continue;
+      b.prevVx = b.vx;
+      b.prevVy = b.vy;
+    }
+
     world.step(dt, VELOCITY_ITERATIONS, POSITION_ITERATIONS);
 
     // 同步身体状态至 balls 数组（坐标、角度由库全权驱动，无自写位移算角）
@@ -1455,26 +1538,14 @@
 
     ctx.save();
     ctx.setLineDash([10, 8]);
+    ctx.lineDashOffset = 3;
     ctx.lineWidth = 3;
     ctx.lineCap = 'round';
     ctx.strokeStyle = 'rgba(201, 85, 106, 0.72)';
     ctx.beginPath();
-    ctx.moveTo(0, LINE_Y);
-    ctx.lineTo(W, LINE_Y);
+    ctx.moveTo(8, LINE_Y);
+    ctx.lineTo(W - 8, LINE_Y);
     ctx.stroke();
-    ctx.restore();
-
-    // 两侧小三角标记
-    ctx.save();
-    ctx.fillStyle = 'rgba(201, 85, 106, 0.6)';
-    for (const x of [9, W - 9]) {
-      ctx.beginPath();
-      ctx.moveTo(x, LINE_Y - 5);
-      ctx.lineTo(x + (x < W / 2 ? 1 : -1) * 7, LINE_Y - 5);
-      ctx.lineTo(x, LINE_Y + 5);
-      ctx.closePath();
-      ctx.fill();
-    }
     ctx.restore();
 
     // 不再画 10px 的“危险线”小字：虚线 + 渐变危险区 + 警告红闪已经是三重信号，
@@ -1690,13 +1761,13 @@
   // UI
   // ---------------------------------------------------------------
   function showScreen(el) {
-    [startScreen, pauseScreen, overScreen].forEach((s) => {
+    [startScreen, pauseScreen, overScreen, gameSettingsScreen].forEach((s) => {
       if (s) s.classList.toggle('is-visible', s === el);
     });
   }
 
   function hideScreens() {
-    [startScreen, pauseScreen, overScreen].forEach((s) => {
+    [startScreen, pauseScreen, overScreen, gameSettingsScreen].forEach((s) => {
       if (s) s.classList.remove('is-visible');
     });
   }
@@ -1802,6 +1873,35 @@
 
     if (btnSound) btnSound.addEventListener('click', toggleMute);
 
+    if (gameSettingsBtn) gameSettingsBtn.addEventListener('click', openSettings);
+    if (gameSettingsCloseBtn) gameSettingsCloseBtn.addEventListener('click', closeSettings);
+    if (gameSettingsScreen) {
+      gameSettingsScreen.addEventListener('click', (e) => {
+        if (e.target === gameSettingsScreen) closeSettings();
+      });
+    }
+    if (gameClearBestBtn) gameClearBestBtn.addEventListener('click', clearBest);
+
+    if (gameMusicSlider) {
+      gameMusicSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        musicVol = (isNaN(val) || val < 0 || val > 100) ? 0 : Math.max(0, Math.min(100, val));
+        if (gameMusicValue) gameMusicValue.textContent = musicVol + '%';
+        applyAudioVolumes();
+        safeStorageSet(STORAGE_MUSIC, String(musicVol));
+      });
+    }
+
+    if (gameSfxSlider) {
+      gameSfxSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        sfxVol = (isNaN(val) || val < 0 || val > 100) ? 0 : Math.max(0, Math.min(100, val));
+        if (gameSfxValue) gameSfxValue.textContent = sfxVol + '%';
+        applyAudioVolumes();
+        safeStorageSet(STORAGE_SFX, String(sfxVol));
+      });
+    }
+
     document.addEventListener('keydown', (e) => {
       if (e.key === 'p' || e.key === 'P') {
         if (state === 'playing' || state === 'warning') pauseGame(false);
@@ -1822,6 +1922,7 @@
     applySoundButton();
 
     bestValue.textContent = String(best);
+    if (gameSettingsBestValue) gameSettingsBestValue.textContent = String(best);
     // 游戏页没有 loadNote（那是旧开始卡片里的东西），只在有它时才写
     if (loadNote) {
       if (bestTampered) {
